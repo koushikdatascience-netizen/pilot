@@ -1,0 +1,12 @@
+bin/
+obj/
+node_modules/
+.next/
+out/
+dist/
+.env
+*.user
+*.suo
+npm-debug.log*
+pnpm-lock.yaml
+package-lock.json
