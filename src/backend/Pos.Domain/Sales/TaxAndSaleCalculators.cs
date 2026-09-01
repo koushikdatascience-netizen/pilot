@@ -87,8 +87,12 @@ public sealed class SaleCalculator
                 Quantity = input.Quantity,
                 UnitPrice = input.UnitPrice,
                 DiscountAmount = input.DiscountAmount,
+                TaxableAmount = tax.TaxableAmount,
                 TaxRate = input.TaxRate,
                 TaxAmount = tax.TaxAmount,
+                CgstAmount = tax.Cgst,
+                SgstAmount = tax.Sgst,
+                IgstAmount = tax.Igst,
                 LineTotal = lineTotal
             });
 

@@ -2,40 +2,53 @@
 
 ## Source Inputs
 
-The initial architecture is based on `prompt.md`, `product-concept.md`, and the included POS market research PDF. The research shows a fragmented POS market where the strongest products win through ecosystem depth, offline resilience, payments, vertical workflows, and localization. The product concept narrows that into one commerce core with configurable vertical modules.
+The architecture is based on `prompt.md`, `product-concept.md`, `docs/PHASE_1.md`, and the Milestone 1.5 implementation prompt. The product concept calls for one commerce core that can support many verticals without turning retail, restaurant, hotel, pharmacy, liquor, wholesale, and mall behavior into one tangled POS screen.
 
 ## System Shape
 
-Version 1 is a modular monolith, not microservices. The backend is an ASP.NET Core Web API with strict module boundaries inside one deployable service. The web app is a Next.js back office with an isolated POS workspace that can later become a desktop edge shell.
+Version 1 remains a modular monolith, not microservices. Milestone 1.5 adds real persistence and application boundaries:
 
 ```
 apps/web
-  Back office
-  POS checkout shell
+  Next.js back office
+  API-backed POS checkout
 
 src/backend
-  Pos.Api
-  Pos.Domain
+  Pos.Api            HTTP, auth, OpenAPI, ProblemDetails, DI
+  Pos.Application    use cases, validation, tenant-scoped workflows
+  Pos.Domain         money, tax, sales, inventory, identity abstractions
+  Pos.Infrastructure EF Core DbContext, migrations, development seed
 
 tests/backend
-  Domain invariant tests
+  Pos.Domain.Tests
+  Pos.Integration.Tests
 ```
 
-## Tenant Hierarchy
+`Program.cs` is now composition and routing only. Business rules live in domain/application services, and database shape lives in infrastructure.
+
+## Tenant And Auth Boundaries
 
 The hierarchy is:
 
 `Tenant -> Organization -> Business/Brand -> Location -> Terminal`
 
-Warehouses belong to locations in Phase 1. Future enterprise and mall deployments can add cross-location warehouses and aggregate analytics without weakening tenant isolation.
+Warehouses belong to locations for Phase 1. Locations also carry a default sales warehouse for POS stock reductions.
 
-Every business record that can expose merchant data carries `TenantId`. Server-side query boundaries must enforce that scope. Frontend filtering is never considered sufficient tenant security.
+Every merchant-owned aggregate carries `TenantId`. API tenant context is derived from authenticated token claims through `ITenantContext`; arbitrary `X-Tenant-Id` headers are not trusted. Role permissions are loaded at login and enforced by ASP.NET Core authorization policies.
+
+## Persistence
+
+PostgreSQL is the system of record. EF Core/Npgsql owns schema generation through migrations under `Pos.Infrastructure/Persistence/Migrations`.
+
+The initial EF migration creates tenants, organizations, businesses, locations, terminals, warehouses, roles, users, role permissions, user roles, categories, tax categories, products, customers, sales, sale lines, payments, inventory transactions, audit logs, outbox events, and invoice sequences. Tenant-scoped uniqueness is enforced for SKU, barcode, device code, roles, invoice numbers, and idempotent sale commands.
+
+Committed app settings do not contain database credentials or token signing secrets. Local development uses environment variables, launch settings, `.env.example`, or Docker Compose values.
 
 ## Core Modules
 
-Identity owns users, roles, permissions, password hashing policy, cashier identity, and authorization claims.
+Identity owns users, roles, permissions, PBKDF2 password hashes, cashier/admin identities, token issuance, and authorization claims.
 
-Tenancy owns tenants, organizations, locations, terminals, and warehouses.
+Tenancy owns tenants, organizations, businesses, locations, terminals, and warehouses.
 
 Catalog owns categories, products, barcodes, tax categories, unit metadata, and searchable product identity.
 
@@ -43,61 +56,58 @@ Customers owns customer profile, phone, email, GSTIN/tax IDs, and future credit/
 
 Inventory owns immutable inventory ledger entries and stock balance read models. Stock is not stored directly on product records.
 
-Sales owns sales, sale lines, payment records, sale status, invoice numbering, immutable line snapshots, discounts, totals, and sale completion.
+Sales owns transactional sale completion, sale lines, payments, invoice sequencing, immutable line snapshots, discounts, GST totals, idempotency, audit, and outbox events.
 
-Reporting initially reads from sales, inventory, and catalog models to expose daily KPIs, top products, and low-stock products.
+Reporting reads from sales, inventory, and catalog models to expose daily KPIs, top products, and low-stock products.
 
-## Transaction Boundaries
+## Sale Transaction Boundary
 
-Sale completion is the critical aggregate transaction. It must:
+Sale completion is the critical aggregate transaction. It:
 
-1. Validate tenant, location, terminal, sale lines, payments, and tax rules.
-2. Calculate immutable sale totals.
-3. Persist the completed sale and payments.
-4. Write inventory ledger reductions for stock-tracked items.
-5. Append outbox events such as `SaleCompleted`, `PaymentRecorded`, and `InventoryReduced`.
+1. Validates tenant-owned location, terminal, customer, products, taxes, and warehouse.
+2. Aggregates duplicate product lines before stock validation.
+3. Calculates server-side price, discount, GST, CGST/SGST/IGST, taxable amount, and grand totals.
+4. Requires captured payments to exactly equal the calculated grand total.
+5. Allocates an invoice from `InvoiceSequence` scoped by tenant, location, period, and prefix.
+6. Persists sale, lines, payments, inventory reductions, audit log, and outbox events in one serializable database transaction.
+7. Replays duplicate tenant/terminal/client-generated sale commands idempotently.
 
-The operation should commit atomically in the cloud API. The later local edge runtime will store the same operation shape locally, then sync idempotently.
+Inventory concurrency is guarded by the serializable transaction around stock reads and ledger writes, unique idempotency constraints, and database row-version checks for invoice sequence updates.
 
-## Offline Strategy
+## Offline And Sync Strategy
 
-The product is offline-first by design. Phase 1 prepares the contracts:
+The product is offline-first by design. Milestone 1.5 keeps the future edge path intact:
 
-- UUID identifiers for every distributed business entity.
-- `ClientGeneratedId`, `TerminalId`, `CreatedAtUtc`, `UpdatedAtUtc`, `Version`, and `SyncStatus` where applicable.
+- UUID identifiers for distributed business entities.
+- `ClientGeneratedId`, `TerminalId`, timestamps, version tokens, and `SyncStatus` where applicable.
 - Immutable sales and inventory ledger movements.
 - Transactional outbox events.
 - Hardware-neutral POS UI and barcode keyboard-wedge flow.
 
-Full local SQLite sync is a later milestone. The current backend exposes models that will survive the move to local edge execution.
-
-## Sync Strategy
-
-Future sync is command/event based. A terminal creates immutable business operations with permanent IDs. The cloud API ingests them idempotently by tenant, terminal, and client-generated ID. Conflict rules belong to individual modules. Completed sales should never be merged by editing historical lines; corrections happen through returns, voids, or adjustment operations.
+Full local SQLite sync remains a later milestone. Completed sales are immutable; corrections should be represented as returns, voids, or adjustment operations.
 
 ## Tax Strategy
 
-The tax engine is abstracted from sales. India GST is the first implementation and supports INR, HSN/SAC metadata, inclusive/exclusive tax, CGST, SGST, and IGST split. The core sales engine depends on calculated tax lines, not hard-coded Indian tax assumptions.
+The tax engine is abstracted from sales. India GST is the first implementation and supports INR, HSN/SAC metadata, inclusive/exclusive tax, CGST, SGST, and IGST split. The persisted sale line stores transaction-time taxable amount and tax component snapshots.
 
 ## Payment Strategy
 
-Phase 1 supports manual cash, UPI, card, wallet, and account payment records. The domain model stores provider-neutral payment method, amount, reference, status, and metadata. It never stores raw card PAN or CVV data. Future providers such as Razorpay, Pine Labs, Stripe, Adyen, and acquirers plug in behind a payment gateway abstraction.
-
-## Vertical Module Strategy
-
-Retail is the Phase 1 vertical slice. Grocery, restaurant, hotel, pharmacy, liquor, wholesale, and mall modules extend the core through additional entities, screens, policies, and integrations. State-specific excise, prescription, PMS, KDS, fuel pump, and marketplace behavior must not be embedded into Sales or Inventory.
+Phase 1 supports manual cash, UPI, card, wallet, and account payment records. The domain model stores provider-neutral payment method, amount, reference, status, and metadata. It never stores raw card PAN or CVV data.
 
 ## Deployment Topology
 
-Local development uses the API, web app, and Docker Compose infrastructure for PostgreSQL. Redis is designed as an optional future cache or queue dependency and is not required for basic development.
+Local development uses:
 
-Production topology starts as:
+```
+Next.js app -> ASP.NET Core API -> PostgreSQL
+```
+
+Production starts as:
 
 ```
 Browser/POS client -> ASP.NET Core API -> PostgreSQL
                          |
-                         +-> outbox table
-                         +-> optional Redis later
+                         +-> outbox_events
 ```
 
 Later hybrid topology adds:

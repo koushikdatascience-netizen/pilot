@@ -1,27 +1,75 @@
-using System.Text.Json;
 using System.Text.Json.Serialization;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
-using Pos.Api;
+using Microsoft.EntityFrameworkCore;
+using Pos.Api.Security;
+using Pos.Application.Auth;
+using Pos.Application.Catalog;
+using Pos.Application.Common;
+using Pos.Application.Customers;
+using Pos.Application.Inventory;
+using Pos.Application.Reporting;
+using Pos.Application.Sales;
+using Pos.Application.Tenancy;
 using Pos.Domain.Catalog;
-using Pos.Domain.Common;
-using Pos.Domain.Customers;
-using Pos.Domain.Inventory;
-using Pos.Domain.Operations;
+using Pos.Domain.Identity;
 using Pos.Domain.Sales;
-using Pos.Domain.Tenancy;
+using Pos.Domain.Security;
+using Pos.Infrastructure.Persistence;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Logging.ClearProviders();
 builder.Logging.AddJsonConsole();
 builder.Services.AddProblemDetails();
+builder.Services.AddOpenApi("v1");
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("DevelopmentWeb", policy =>
+        policy.WithOrigins("http://localhost:3000", "http://127.0.0.1:3000")
+            .AllowAnyHeader()
+            .AllowAnyMethod());
+});
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
     options.SerializerOptions.Converters.Add(new JsonStringEnumConverter());
 });
+
+var connectionString = Environment.GetEnvironmentVariable("POSTGRES_CONNECTION_STRING")
+    ?? builder.Configuration.GetConnectionString("Postgres")
+    ?? (builder.Environment.IsEnvironment("Testing") ? "Host=localhost;Database=testing" : null)
+    ?? throw new InvalidOperationException("PostgreSQL connection string is required.");
+
+builder.Services.AddDbContext<CommerceDbContext>(options => options.UseNpgsql(connectionString));
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<IPasswordHasher, Pbkdf2PasswordHasher>();
+builder.Services.AddScoped<AuthService>();
+builder.Services.AddScoped<ProductService>();
+builder.Services.AddScoped<CustomerService>();
+builder.Services.AddScoped<InventoryService>();
+builder.Services.AddScoped<CompleteSaleService>();
+builder.Services.AddScoped<ReportingService>();
+builder.Services.AddScoped<TenancyService>();
+builder.Services.AddScoped<DevelopmentSeeder>();
+builder.Services.AddScoped<ICurrentUserAccessor, HttpCurrentUserAccessor>();
+builder.Services.AddScoped<ITenantContext, TenantContext>();
+builder.Services.AddSingleton<ITokenIssuer, HmacTokenIssuer>();
 builder.Services.AddSingleton(new SaleCalculator(new IndiaGstTaxCalculator()));
-builder.Services.AddSingleton<CommerceStore>();
+
+builder.Services.AddAuthentication(SignedBearerAuthenticationHandler.SchemeName)
+    .AddScheme<SignedBearerAuthenticationOptions, SignedBearerAuthenticationHandler>(SignedBearerAuthenticationHandler.SchemeName, _ => { });
+builder.Services.AddAuthorization(options =>
+{
+    foreach (var permission in Enum.GetValues<Permission>())
+    {
+        options.AddPolicy(permission.ToString(), policy =>
+        {
+            policy.RequireAuthenticatedUser();
+            policy.RequireClaim("permission", permission.ToString());
+        });
+    }
+});
 
 var app = builder.Build();
 
@@ -30,311 +78,85 @@ app.UseExceptionHandler(errorApp =>
     errorApp.Run(async context =>
     {
         var feature = context.Features.Get<IExceptionHandlerFeature>();
-        var problem = new ProblemDetails
+        var error = feature?.Error;
+        var (status, title, detail, errors) = error switch
         {
-            Status = StatusCodes.Status400BadRequest,
-            Title = "Request could not be completed",
-            Detail = feature?.Error.Message
+            AppValidationException validation => (StatusCodes.Status400BadRequest, "Validation failed", "One or more validation errors occurred.", validation.Errors),
+            NotFoundException notFound => (StatusCodes.Status404NotFound, "Not found", notFound.Message, null),
+            ForbiddenException => (StatusCodes.Status403Forbidden, "Forbidden", "The requested operation is not allowed.", null),
+            ConflictException conflict => (StatusCodes.Status409Conflict, "Conflict", conflict.Message, null),
+            UnauthorizedAccessException => (StatusCodes.Status401Unauthorized, "Unauthorized", "Authentication is required.", null),
+            _ => (StatusCodes.Status500InternalServerError, "Unexpected error", "The request could not be completed.", null)
         };
-        context.Response.StatusCode = problem.Status.Value;
-        await context.Response.WriteAsJsonAsync(problem);
+
+        context.Response.StatusCode = status;
+        if (errors is not null)
+        {
+            await context.Response.WriteAsJsonAsync(new HttpValidationProblemDetails(errors) { Status = status, Title = title, Detail = detail });
+            return;
+        }
+
+        await context.Response.WriteAsJsonAsync(new ProblemDetails { Status = status, Title = title, Detail = detail });
     });
 });
 
+if (app.Environment.IsDevelopment())
+{
+    await using var scope = app.Services.CreateAsyncScope();
+    var db = scope.ServiceProvider.GetRequiredService<CommerceDbContext>();
+    await db.Database.MigrateAsync();
+    await scope.ServiceProvider.GetRequiredService<DevelopmentSeeder>().SeedAsync(CancellationToken.None);
+}
+
+if (app.Environment.IsDevelopment())
+{
+    app.UseCors("DevelopmentWeb");
+}
+
+app.UseAuthentication();
+app.UseAuthorization();
+app.MapOpenApi("/openapi/{documentName}.json");
+
 app.MapGet("/health", () => Results.Ok(new { status = "healthy" }));
-app.MapGet("/health/ready", () => Results.Ok(new { status = "ready", database = "postgres-configured" }));
-app.MapGet("/openapi/v1.json", () => Results.Json(OpenApiDocumentFactory.Create()));
+app.MapGet("/health/ready", async (CommerceDbContext db, CancellationToken cancellationToken) =>
+{
+    var canConnect = await db.Database.CanConnectAsync(cancellationToken);
+    return canConnect ? Results.Ok(new { status = "ready", database = "postgres" }) : Results.Problem("PostgreSQL is unavailable.", statusCode: StatusCodes.Status503ServiceUnavailable);
+});
 
 var api = app.MapGroup("/api/v1");
 
-api.MapGet("/tenancy/bootstrap", (CommerceStore store) => Results.Ok(new
-{
-    store.Tenant,
-    store.Organization,
-    store.Business,
-    store.Location,
-    store.Terminal,
-    store.Warehouse
-}));
+api.MapPost("/auth/login", async (AuthService auth, LoginRequest request, CancellationToken cancellationToken) =>
+    Results.Ok(await auth.LoginAsync(request, cancellationToken))).AllowAnonymous();
 
-api.MapGet("/categories", (CommerceStore store, HttpRequest request) =>
-{
-    var tenantId = TenantHeader.GetTenantId(request, store.Tenant.Id);
-    return Results.Ok(store.Categories.WhereTenant(tenantId));
-});
+var protectedApi = api.MapGroup("").RequireAuthorization();
+protectedApi.MapGet("/tenancy/bootstrap", async (TenancyService service, CancellationToken cancellationToken) => Results.Ok(await service.BootstrapAsync(cancellationToken)));
 
-api.MapGet("/products", (CommerceStore store, HttpRequest request, string? q) =>
-{
-    var tenantId = TenantHeader.GetTenantId(request, store.Tenant.Id);
-    var products = store.Products.WhereTenant(tenantId);
-    if (!string.IsNullOrWhiteSpace(q))
-    {
-        products = products.Where(p =>
-            p.Name.Contains(q, StringComparison.OrdinalIgnoreCase) ||
-            p.Sku.Contains(q, StringComparison.OrdinalIgnoreCase) ||
-            (p.Barcode?.Contains(q, StringComparison.OrdinalIgnoreCase) ?? false));
-    }
+protectedApi.MapGet("/categories", async (CommerceDbContext db, ITenantContext tenant, CancellationToken cancellationToken) =>
+    Results.Ok(await db.Categories.AsNoTracking().Where(c => c.TenantId == tenant.TenantId).OrderBy(c => c.Name).Select(c => new { c.Id, c.Name, c.ParentCategoryId }).ToArrayAsync(cancellationToken)));
 
-    return Results.Ok(products.OrderBy(p => p.Name));
-});
+protectedApi.MapGet("/tax-categories", async (CommerceDbContext db, ITenantContext tenant, CancellationToken cancellationToken) =>
+    Results.Ok(await db.TaxCategories.AsNoTracking().Where(t => t.TenantId == tenant.TenantId).OrderBy(t => t.Name).Select(t => new { t.Id, t.Name, t.CountryCode, t.Rate, t.TaxBehavior }).ToArrayAsync(cancellationToken)));
 
-api.MapPost("/products", (CommerceStore store, HttpRequest request, CreateProductRequest body) =>
-{
-    var tenantId = TenantHeader.GetTenantId(request, store.Tenant.Id);
-    if (body.Price < 0) return Results.ValidationProblem(new Dictionary<string, string[]> { ["price"] = ["Price cannot be negative."] });
-    if (store.Products.Any(p => p.TenantId == tenantId && p.Sku.Equals(body.Sku, StringComparison.OrdinalIgnoreCase)))
-    {
-        return Results.Conflict(new ProblemDetails { Title = "Duplicate SKU", Detail = "SKU must be unique inside a tenant." });
-    }
+protectedApi.MapGet("/products", async (ProductService service, string? q, CancellationToken cancellationToken) => Results.Ok(await service.ListAsync(q, cancellationToken)));
+protectedApi.MapPost("/products", [Authorize(Policy = nameof(Permission.ManageCatalog))] async (ProductService service, CreateProductRequest request, CancellationToken cancellationToken) =>
+    Results.Created("/api/v1/products", await service.CreateAsync(request, cancellationToken)));
 
-    var product = new Product
-    {
-        Id = Guid.NewGuid(),
-        TenantId = tenantId,
-        CategoryId = body.CategoryId,
-        TaxCategoryId = body.TaxCategoryId,
-        Name = body.Name.Trim(),
-        Sku = body.Sku.Trim(),
-        Barcode = string.IsNullOrWhiteSpace(body.Barcode) ? null : body.Barcode.Trim(),
-        HsnSac = string.IsNullOrWhiteSpace(body.HsnSac) ? null : body.HsnSac.Trim(),
-        UnitOfMeasure = body.UnitOfMeasure.Trim(),
-        Price = Money.Inr(body.Price),
-        IsStockTracked = body.IsStockTracked,
-        IsActive = true
-    };
+protectedApi.MapGet("/customers", async (CustomerService service, string? q, CancellationToken cancellationToken) => Results.Ok(await service.ListAsync(q, cancellationToken)));
+protectedApi.MapPost("/customers", async (CustomerService service, CreateCustomerRequest request, CancellationToken cancellationToken) =>
+    Results.Created("/api/v1/customers", await service.CreateAsync(request, cancellationToken)));
 
-    store.Products.Add(product);
-    store.OutboxEvents.Add(Outbox.For(tenantId, "ProductCreated", product));
-    return Results.Created($"/api/v1/products/{product.Id}", product);
-});
+protectedApi.MapGet("/inventory/balances", async (InventoryService service, CancellationToken cancellationToken) => Results.Ok(await service.BalancesAsync(cancellationToken)));
+protectedApi.MapPost("/inventory/opening-stock", [Authorize(Policy = nameof(Permission.ManageInventory))] async (InventoryService service, OpeningStockRequest request, CancellationToken cancellationToken) =>
+    Results.Created("/api/v1/inventory/transactions", await service.AddOpeningStockAsync(request, cancellationToken)));
 
-api.MapGet("/tax-categories", (CommerceStore store, HttpRequest request) =>
-{
-    var tenantId = TenantHeader.GetTenantId(request, store.Tenant.Id);
-    return Results.Ok(store.TaxCategories.WhereTenant(tenantId));
-});
+protectedApi.MapPost("/sales/complete", [Authorize(Policy = nameof(Permission.CompleteSale))] async (CompleteSaleService service, CompleteSaleRequest request, CancellationToken cancellationToken) =>
+    Results.Created("/api/v1/sales", await service.CompleteAsync(request, cancellationToken)));
+protectedApi.MapGet("/sales", async (CompleteSaleService service, CancellationToken cancellationToken) => Results.Ok(await service.ListAsync(cancellationToken)));
 
-api.MapGet("/customers", (CommerceStore store, HttpRequest request, string? q) =>
-{
-    var tenantId = TenantHeader.GetTenantId(request, store.Tenant.Id);
-    var customers = store.Customers.WhereTenant(tenantId);
-    if (!string.IsNullOrWhiteSpace(q))
-    {
-        customers = customers.Where(c =>
-            c.DisplayName.Contains(q, StringComparison.OrdinalIgnoreCase) ||
-            (c.Phone?.Contains(q, StringComparison.OrdinalIgnoreCase) ?? false));
-    }
-
-    return Results.Ok(customers.OrderBy(c => c.DisplayName));
-});
-
-api.MapPost("/customers", (CommerceStore store, HttpRequest request, CreateCustomerRequest body) =>
-{
-    var tenantId = TenantHeader.GetTenantId(request, store.Tenant.Id);
-    var customer = new Customer
-    {
-        Id = Guid.NewGuid(),
-        TenantId = tenantId,
-        DisplayName = body.DisplayName.Trim(),
-        Phone = body.Phone,
-        Email = body.Email,
-        Gstin = body.Gstin,
-        CreditLimit = body.CreditLimit,
-        IsWalkIn = false
-    };
-
-    store.Customers.Add(customer);
-    store.OutboxEvents.Add(Outbox.For(tenantId, "CustomerCreated", customer));
-    return Results.Created($"/api/v1/customers/{customer.Id}", customer);
-});
-
-api.MapGet("/inventory/balances", (CommerceStore store, HttpRequest request) =>
-{
-    var tenantId = TenantHeader.GetTenantId(request, store.Tenant.Id);
-    var balances = InventoryLedger.BuildBalances(store.InventoryTransactions.WhereTenant(tenantId));
-    var response = balances.Select(b => new
-    {
-        b.TenantId,
-        b.WarehouseId,
-        b.ProductId,
-        ProductName = store.Products.Single(p => p.Id == b.ProductId).Name,
-        b.QuantityOnHand
-    });
-    return Results.Ok(response);
-});
-
-api.MapPost("/inventory/opening-stock", (CommerceStore store, HttpRequest request, OpeningStockRequest body) =>
-{
-    var tenantId = TenantHeader.GetTenantId(request, store.Tenant.Id);
-    var movement = new InventoryTransaction
-    {
-        Id = Guid.NewGuid(),
-        TenantId = tenantId,
-        LocationId = body.LocationId,
-        WarehouseId = body.WarehouseId,
-        ProductId = body.ProductId,
-        Type = InventoryTransactionType.OpeningStock,
-        QuantityDelta = body.Quantity,
-        UnitCost = body.UnitCost,
-        SourceDocumentType = "OpeningStock",
-        SourceDocumentId = Guid.NewGuid(),
-        OccurredAtUtc = DateTimeOffset.UtcNow
-    };
-
-    store.InventoryTransactions.Add(movement);
-    store.OutboxEvents.Add(Outbox.For(tenantId, "StockAdjusted", movement));
-    return Results.Created($"/api/v1/inventory/transactions/{movement.Id}", movement);
-});
-
-api.MapPost("/sales/complete", (CommerceStore store, SaleCalculator calculator, HttpRequest request, CompleteSaleRequest body) =>
-{
-    var tenantId = TenantHeader.GetTenantId(request, store.Tenant.Id);
-    var saleId = Guid.NewGuid();
-    var inputs = body.Lines.Select(line =>
-    {
-        var product = store.Products.Single(p => p.TenantId == tenantId && p.Id == line.ProductId && p.IsActive);
-        var tax = store.TaxCategories.Single(t => t.TenantId == tenantId && t.Id == product.TaxCategoryId);
-        return new SaleLineInput(product.Id, product.Name, product.Sku, product.Barcode, line.Quantity, product.Price.Amount, line.DiscountAmount, tax.Rate, tax.TaxBehavior);
-    }).ToArray();
-
-    var (lines, totals) = calculator.CalculateLines(tenantId, saleId, inputs, body.IntraState);
-    var payments = body.Payments.Select(p => new SalePaymentInput(p.Method, p.Amount, p.Reference)).ToArray();
-    SaleCalculator.EnsurePaymentsCoverTotal(totals.GrandTotal, payments);
-
-    foreach (var line in lines)
-    {
-        var product = store.Products.Single(p => p.Id == line.ProductId);
-        if (product.IsStockTracked)
-        {
-            InventoryLedger.EnsureSufficientStock(tenantId, store.Warehouse.Id, product.Id, line.Quantity, store.InventoryTransactions);
-        }
-    }
-
-    var paymentEntities = payments.Select(p => new Payment
-    {
-        Id = Guid.NewGuid(),
-        TenantId = tenantId,
-        SaleId = saleId,
-        Method = p.Method,
-        Amount = Money.Round(p.Amount),
-        Currency = "INR",
-        Status = PaymentStatus.Captured,
-        Reference = p.Reference,
-        CapturedAtUtc = DateTimeOffset.UtcNow
-    }).ToArray();
-
-    var sale = new Sale
-    {
-        Id = saleId,
-        TenantId = tenantId,
-        LocationId = body.LocationId,
-        TerminalId = body.TerminalId,
-        CustomerId = body.CustomerId,
-        InvoiceNumber = store.NextInvoiceNumber(),
-        Status = SaleStatus.Completed,
-        Currency = "INR",
-        Subtotal = totals.Subtotal,
-        DiscountTotal = totals.DiscountTotal,
-        TaxTotal = totals.TaxTotal,
-        GrandTotal = totals.GrandTotal,
-        ClientGeneratedId = body.ClientGeneratedId == Guid.Empty ? Guid.NewGuid() : body.ClientGeneratedId,
-        CompletedAtUtc = DateTimeOffset.UtcNow,
-        SyncStatus = SyncStatus.Synced,
-        Lines = lines,
-        Payments = paymentEntities
-    };
-
-    store.Sales.Add(sale);
-    foreach (var line in lines)
-    {
-        store.InventoryTransactions.Add(new InventoryTransaction
-        {
-            Id = Guid.NewGuid(),
-            TenantId = tenantId,
-            LocationId = body.LocationId,
-            WarehouseId = store.Warehouse.Id,
-            ProductId = line.ProductId,
-            Type = InventoryTransactionType.Sale,
-            QuantityDelta = -line.Quantity,
-            SourceDocumentType = "Sale",
-            SourceDocumentId = sale.Id,
-            OccurredAtUtc = DateTimeOffset.UtcNow
-        });
-    }
-
-    store.OutboxEvents.Add(Outbox.For(tenantId, "SaleCompleted", sale));
-    return Results.Created($"/api/v1/sales/{sale.Id}", sale);
-});
-
-api.MapGet("/sales", (CommerceStore store, HttpRequest request) =>
-{
-    var tenantId = TenantHeader.GetTenantId(request, store.Tenant.Id);
-    return Results.Ok(store.Sales.WhereTenant(tenantId).OrderByDescending(s => s.CompletedAtUtc));
-});
-
-api.MapGet("/reports/today", (CommerceStore store, HttpRequest request) =>
-{
-    var tenantId = TenantHeader.GetTenantId(request, store.Tenant.Id);
-    var today = DateTimeOffset.UtcNow.Date;
-    var sales = store.Sales.WhereTenant(tenantId).Where(s => s.CompletedAtUtc?.UtcDateTime.Date == today).ToArray();
-    var lowStock = InventoryLedger.BuildBalances(store.InventoryTransactions.WhereTenant(tenantId))
-        .Where(b => b.QuantityOnHand <= 10)
-        .Select(b => new { b.ProductId, ProductName = store.Products.Single(p => p.Id == b.ProductId).Name, b.QuantityOnHand })
-        .ToArray();
-
-    return Results.Ok(new
-    {
-        Revenue = Money.Round(sales.Sum(s => s.GrandTotal)),
-        TransactionCount = sales.Length,
-        AverageOrderValue = sales.Length == 0 ? 0 : Money.Round(sales.Average(s => s.GrandTotal)),
-        TopSellingProducts = sales.SelectMany(s => s.Lines)
-            .GroupBy(l => new { l.ProductId, l.ProductNameSnapshot })
-            .Select(g => new { g.Key.ProductId, ProductName = g.Key.ProductNameSnapshot, Quantity = g.Sum(x => x.Quantity), Revenue = g.Sum(x => x.LineTotal) })
-            .OrderByDescending(x => x.Revenue)
-            .Take(5),
-        LowStockProducts = lowStock
-    });
-});
+protectedApi.MapGet("/reports/today", [Authorize(Policy = nameof(Permission.ViewReports))] async (ReportingService service, CancellationToken cancellationToken) =>
+    Results.Ok(await service.TodayAsync(cancellationToken)));
 
 app.Run();
 
-public sealed record CreateProductRequest(Guid CategoryId, Guid TaxCategoryId, string Name, string Sku, string? Barcode, string? HsnSac, string UnitOfMeasure, decimal Price, bool IsStockTracked);
-public sealed record CreateCustomerRequest(string DisplayName, string? Phone, string? Email, string? Gstin, decimal CreditLimit);
-public sealed record OpeningStockRequest(Guid LocationId, Guid WarehouseId, Guid ProductId, decimal Quantity, decimal? UnitCost);
-public sealed record CompleteSaleLineRequest(Guid ProductId, decimal Quantity, decimal DiscountAmount);
-public sealed record CompleteSalePaymentRequest(PaymentMethod Method, decimal Amount, string? Reference);
-public sealed record CompleteSaleRequest(Guid LocationId, Guid TerminalId, Guid? CustomerId, Guid ClientGeneratedId, bool IntraState, IReadOnlyList<CompleteSaleLineRequest> Lines, IReadOnlyList<CompleteSalePaymentRequest> Payments);
-
-static class TenantHeader
-{
-    public static Guid GetTenantId(HttpRequest request, Guid fallback)
-    {
-        return request.Headers.TryGetValue("X-Tenant-Id", out var header) && Guid.TryParse(header, out var parsed)
-            ? parsed
-            : fallback;
-    }
-}
-
-static class TenantEnumerable
-{
-    public static IEnumerable<T> WhereTenant<T>(this IEnumerable<T> values, Guid tenantId)
-        where T : Pos.Domain.Common.TenantEntity
-    {
-        return values.Where(v => v.TenantId == tenantId);
-    }
-}
-
-static class Outbox
-{
-    public static OutboxEvent For(Guid tenantId, string eventType, object payload)
-    {
-        return new OutboxEvent
-        {
-            Id = Guid.NewGuid(),
-            TenantId = tenantId,
-            EventType = eventType,
-            PayloadJson = JsonSerializer.Serialize(payload),
-            OccurredAtUtc = DateTimeOffset.UtcNow
-        };
-    }
-}
+public partial class Program;

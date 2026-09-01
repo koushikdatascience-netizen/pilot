@@ -10,3 +10,4 @@ dist/
 npm-debug.log*
 pnpm-lock.yaml
 package-lock.json
+!apps/web/package-lock.json

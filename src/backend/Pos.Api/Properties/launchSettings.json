@@ -6,7 +6,10 @@
       "launchBrowser": false,
       "applicationUrl": "http://localhost:5088",
       "environmentVariables": {
-        "ASPNETCORE_ENVIRONMENT": "Development"
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "POSTGRES_CONNECTION_STRING": "Host=localhost;Port=5432;Database=universal_commerce;Username=commerce;Password=commerce_dev_password",
+        "DEMO_ADMIN_PASSWORD": "ChangeMe123!",
+        "AUTH_SIGNING_KEY": "development-signing-key-change-me-before-shared-environments"
       }
     }
   }

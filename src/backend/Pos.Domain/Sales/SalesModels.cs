@@ -36,8 +36,12 @@ public sealed record SaleLine : TenantEntity
     public required decimal Quantity { get; init; }
     public required decimal UnitPrice { get; init; }
     public required decimal DiscountAmount { get; init; }
+    public required decimal TaxableAmount { get; init; }
     public required decimal TaxRate { get; init; }
     public required decimal TaxAmount { get; init; }
+    public required decimal CgstAmount { get; init; }
+    public required decimal SgstAmount { get; init; }
+    public required decimal IgstAmount { get; init; }
     public required decimal LineTotal { get; init; }
 }
 

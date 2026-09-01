@@ -1,0 +1,223 @@
+using Pos.Domain.Catalog;
+using Pos.Domain.Identity;
+using Pos.Domain.Inventory;
+using Pos.Domain.Sales;
+using Pos.Domain.Tenancy;
+
+namespace Pos.Infrastructure.Persistence;
+
+public abstract class TenantEntity
+{
+    public Guid Id { get; set; }
+    public Guid TenantId { get; set; }
+    public DateTimeOffset CreatedAtUtc { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset UpdatedAtUtc { get; set; } = DateTimeOffset.UtcNow;
+    public long Version { get; set; } = 1;
+}
+
+public sealed class Tenant
+{
+    public Guid Id { get; set; }
+    public string Name { get; set; } = "";
+    public TenantStatus Status { get; set; }
+    public DateTimeOffset CreatedAtUtc { get; set; } = DateTimeOffset.UtcNow;
+}
+
+public sealed class Organization : TenantEntity
+{
+    public string Name { get; set; } = "";
+    public string LegalName { get; set; } = "";
+    public string? Gstin { get; set; }
+}
+
+public sealed class Business : TenantEntity
+{
+    public Guid OrganizationId { get; set; }
+    public string Name { get; set; } = "";
+    public BusinessType BusinessType { get; set; }
+}
+
+public sealed class Location : TenantEntity
+{
+    public Guid OrganizationId { get; set; }
+    public Guid BusinessId { get; set; }
+    public string Name { get; set; } = "";
+    public string Code { get; set; } = "";
+    public string StateCode { get; set; } = "";
+    public string? Address { get; set; }
+    public Guid DefaultSalesWarehouseId { get; set; }
+}
+
+public sealed class Terminal : TenantEntity
+{
+    public Guid LocationId { get; set; }
+    public string Name { get; set; } = "";
+    public string DeviceCode { get; set; } = "";
+    public TerminalStatus Status { get; set; }
+}
+
+public sealed class Warehouse : TenantEntity
+{
+    public Guid LocationId { get; set; }
+    public string Name { get; set; } = "";
+    public string Code { get; set; } = "";
+}
+
+public sealed class Role : TenantEntity
+{
+    public string Name { get; set; } = "";
+}
+
+public sealed class RolePermission
+{
+    public Guid RoleId { get; set; }
+    public Permission Permission { get; set; }
+}
+
+public sealed class User : TenantEntity
+{
+    public string DisplayName { get; set; } = "";
+    public string Email { get; set; } = "";
+    public string PasswordHash { get; set; } = "";
+    public bool IsActive { get; set; } = true;
+}
+
+public sealed class UserRole
+{
+    public Guid UserId { get; set; }
+    public Guid RoleId { get; set; }
+}
+
+public sealed class Category : TenantEntity
+{
+    public string Name { get; set; } = "";
+    public Guid? ParentCategoryId { get; set; }
+}
+
+public sealed class TaxCategory : TenantEntity
+{
+    public string Name { get; set; } = "";
+    public string CountryCode { get; set; } = "";
+    public decimal Rate { get; set; }
+    public TaxBehavior TaxBehavior { get; set; }
+}
+
+public sealed class Product : TenantEntity
+{
+    public Guid CategoryId { get; set; }
+    public Guid TaxCategoryId { get; set; }
+    public string Name { get; set; } = "";
+    public string Sku { get; set; } = "";
+    public string? Barcode { get; set; }
+    public string? HsnSac { get; set; }
+    public string UnitOfMeasure { get; set; } = "";
+    public decimal PriceAmount { get; set; }
+    public string Currency { get; set; } = "INR";
+    public bool IsStockTracked { get; set; } = true;
+    public bool IsActive { get; set; } = true;
+}
+
+public sealed class Customer : TenantEntity
+{
+    public string DisplayName { get; set; } = "";
+    public string? Phone { get; set; }
+    public string? Email { get; set; }
+    public string? Gstin { get; set; }
+    public decimal CreditLimit { get; set; }
+    public bool IsWalkIn { get; set; }
+}
+
+public sealed class Sale : TenantEntity
+{
+    public Guid LocationId { get; set; }
+    public Guid TerminalId { get; set; }
+    public Guid? CustomerId { get; set; }
+    public string InvoiceNumber { get; set; } = "";
+    public SaleStatus Status { get; set; }
+    public string Currency { get; set; } = "INR";
+    public decimal Subtotal { get; set; }
+    public decimal DiscountTotal { get; set; }
+    public decimal TaxTotal { get; set; }
+    public decimal GrandTotal { get; set; }
+    public Guid ClientGeneratedId { get; set; }
+    public DateTimeOffset? CompletedAtUtc { get; set; }
+    public SyncStatus SyncStatus { get; set; }
+}
+
+public sealed class SaleLine : TenantEntity
+{
+    public Guid SaleId { get; set; }
+    public Guid ProductId { get; set; }
+    public string ProductNameSnapshot { get; set; } = "";
+    public string SkuSnapshot { get; set; } = "";
+    public string? BarcodeSnapshot { get; set; }
+    public decimal Quantity { get; set; }
+    public decimal UnitPrice { get; set; }
+    public decimal DiscountAmount { get; set; }
+    public decimal TaxableAmount { get; set; }
+    public decimal TaxRate { get; set; }
+    public decimal TaxAmount { get; set; }
+    public decimal CgstAmount { get; set; }
+    public decimal SgstAmount { get; set; }
+    public decimal IgstAmount { get; set; }
+    public decimal LineTotal { get; set; }
+}
+
+public sealed class Payment : TenantEntity
+{
+    public Guid SaleId { get; set; }
+    public PaymentMethod Method { get; set; }
+    public decimal Amount { get; set; }
+    public string Currency { get; set; } = "INR";
+    public PaymentStatus Status { get; set; }
+    public string? Provider { get; set; }
+    public string? Reference { get; set; }
+    public DateTimeOffset? CapturedAtUtc { get; set; }
+}
+
+public sealed class InventoryTransaction : TenantEntity
+{
+    public Guid LocationId { get; set; }
+    public Guid WarehouseId { get; set; }
+    public Guid ProductId { get; set; }
+    public InventoryTransactionType Type { get; set; }
+    public decimal QuantityDelta { get; set; }
+    public decimal? UnitCost { get; set; }
+    public string? SourceDocumentType { get; set; }
+    public Guid? SourceDocumentId { get; set; }
+    public DateTimeOffset OccurredAtUtc { get; set; }
+    public Guid? CreatedByUserId { get; set; }
+}
+
+public sealed class AuditLog : TenantEntity
+{
+    public Guid? ActorUserId { get; set; }
+    public string Action { get; set; } = "";
+    public string EntityName { get; set; } = "";
+    public Guid EntityId { get; set; }
+    public Guid? TerminalId { get; set; }
+    public DateTimeOffset OccurredAtUtc { get; set; }
+    public string? BeforeJson { get; set; }
+    public string? AfterJson { get; set; }
+}
+
+public sealed class OutboxEvent : TenantEntity
+{
+    public string EventType { get; set; } = "";
+    public string PayloadJson { get; set; } = "";
+    public DateTimeOffset OccurredAtUtc { get; set; }
+    public DateTimeOffset? ProcessedAtUtc { get; set; }
+    public int Attempts { get; set; }
+}
+
+public sealed class InvoiceSequence
+{
+    public Guid Id { get; set; }
+    public Guid TenantId { get; set; }
+    public Guid LocationId { get; set; }
+    public string FinancialPeriod { get; set; } = "";
+    public string Prefix { get; set; } = "";
+    public int NextNumber { get; set; }
+    public DateTimeOffset UpdatedAtUtc { get; set; } = DateTimeOffset.UtcNow;
+    public uint xmin { get; set; }
+}

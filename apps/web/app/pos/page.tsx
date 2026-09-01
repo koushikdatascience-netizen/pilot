@@ -1,43 +1,88 @@
 "use client";
 
 import { CreditCard, Minus, Plus, ReceiptText, Search, Trash2, UserRound, Wallet } from "lucide-react";
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
+import { BootstrapResponse, CustomerResponse, ProductResponse, StockBalanceResponse, TaxCategoryResponse, createClient, login } from "../../lib/api";
 import { calculateCartTotals, formatMoney } from "../../lib/pos-calculations.mjs";
 
-type Product = {
-  id: string;
-  name: string;
-  sku: string;
-  barcode: string;
-  price: number;
-  taxRate: number;
-  taxBehavior: "Inclusive" | "Exclusive";
-  stock: number;
-};
-
-type CartLine = Product & { quantity: number; discount: number };
-
-const products: Product[] = [
-  { id: "rice", name: "Rice 5kg", sku: "RICE-5KG", barcode: "8901000000011", price: 349, taxRate: 0.05, taxBehavior: "Inclusive", stock: 50 },
-  { id: "milk", name: "Milk 1L", sku: "MILK-1L", barcode: "8901000000028", price: 68, taxRate: 0.05, taxBehavior: "Inclusive", stock: 80 },
-  { id: "shirt", name: "Premium T-Shirt", sku: "TSHIRT-PREM", barcode: "8901000000035", price: 799, taxRate: 0.12, taxBehavior: "Inclusive", stock: 25 },
-  { id: "shampoo", name: "Shampoo 180ml", sku: "SHAMPOO-180", barcode: "8901000000042", price: 185, taxRate: 0.18, taxBehavior: "Inclusive", stock: 50 }
-];
+type Client = ReturnType<typeof createClient>;
+type ProductTile = ProductResponse & { taxRate: number; taxBehavior: "Inclusive" | "Exclusive"; stock: number };
+type CartLine = ProductTile & { quantity: number; discount: number };
 
 export default function PosPage() {
+  const [client, setClient] = useState<Client | null>(null);
+  const [bootstrap, setBootstrap] = useState<BootstrapResponse | null>(null);
+  const [products, setProducts] = useState<ProductResponse[]>([]);
+  const [taxCategories, setTaxCategories] = useState<TaxCategoryResponse[]>([]);
+  const [customers, setCustomers] = useState<CustomerResponse[]>([]);
+  const [balances, setBalances] = useState<StockBalanceResponse[]>([]);
   const [query, setQuery] = useState("");
   const [cart, setCart] = useState<CartLine[]>([]);
+  const [customerId, setCustomerId] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("Cash");
   const [receipt, setReceipt] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  const visibleProducts = products.filter((product) => {
+  async function refresh(activeClient = client) {
+    if (!activeClient) return;
+    const [boot, productList, taxList, customerList, balanceList] = await Promise.all([
+      activeClient.bootstrap(),
+      activeClient.products(),
+      activeClient.taxCategories(),
+      activeClient.customers(),
+      activeClient.balances()
+    ]);
+    setBootstrap(boot);
+    setProducts(productList);
+    setTaxCategories(taxList);
+    setCustomers(customerList);
+    setBalances(balanceList);
+    setCustomerId(customerList.find((customer) => customer.isWalkIn)?.id ?? customerList[0]?.id ?? "");
+    setError(null);
+  }
+
+  useEffect(() => {
+    let mounted = true;
+    login()
+      .then((auth) => {
+        if (!mounted) return null;
+        const api = createClient(auth.accessToken);
+        setClient(api);
+        return refresh(api);
+      })
+      .catch((ex: unknown) => setError(ex instanceof Error ? ex.message : "Could not connect to API"));
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const taxById = useMemo(() => new Map(taxCategories.map((tax) => [tax.id, tax])), [taxCategories]);
+  const stockByProduct = useMemo(() => new Map(balances.map((balance) => [balance.productId, balance.quantityOnHand])), [balances]);
+  const productTiles = useMemo<ProductTile[]>(
+    () =>
+      products.map((product) => {
+        const tax = taxById.get(product.taxCategoryId);
+        return {
+          ...product,
+          barcode: product.barcode ?? "",
+          taxRate: tax?.rate ?? 0,
+          taxBehavior: tax?.taxBehavior ?? "Inclusive",
+          stock: stockByProduct.get(product.id) ?? 0
+        };
+      }),
+    [products, stockByProduct, taxById]
+  );
+
+  const visibleProducts = productTiles.filter((product) => {
     const needle = query.trim().toLowerCase();
-    return !needle || product.name.toLowerCase().includes(needle) || product.sku.toLowerCase().includes(needle) || product.barcode.includes(needle);
+    return !needle || product.name.toLowerCase().includes(needle) || product.sku.toLowerCase().includes(needle) || (product.barcode ?? "").includes(needle);
   });
 
   const totals = useMemo(() => calculateCartTotals(cart), [cart]);
 
-  function addProduct(product: Product) {
+  function addProduct(product: ProductTile) {
+    setReceipt(null);
+    setError(null);
     setCart((current) => {
       const existing = current.find((line) => line.id === product.id);
       if (existing) {
@@ -50,7 +95,7 @@ export default function PosPage() {
 
   function submitSearch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const exact = products.find((product) => product.barcode === query.trim() || product.sku.toLowerCase() === query.trim().toLowerCase());
+    const exact = productTiles.find((product) => product.barcode === query.trim() || product.sku.toLowerCase() === query.trim().toLowerCase());
     if (exact) {
       addProduct(exact);
       setQuery("");
@@ -65,9 +110,24 @@ export default function PosPage() {
     );
   }
 
-  function completeSale() {
-    if (cart.length === 0) return;
-    setReceipt(`KAL-${new Date().toISOString().slice(0, 10).replaceAll("-", "")}-${String(Date.now()).slice(-4)}`);
+  async function completeSale() {
+    if (!client || !bootstrap || cart.length === 0) return;
+    setError(null);
+    try {
+      const response = await client.completeSale({
+        locationId: bootstrap.locationId,
+        terminalId: bootstrap.terminalId,
+        customerId: customerId || null,
+        clientGeneratedId: crypto.randomUUID(),
+        lines: cart.map((line) => ({ productId: line.id, quantity: line.quantity, discountAmount: line.discount })),
+        payments: [{ method: paymentMethod, amount: totals.grandTotal, reference: "WEB-POS" }]
+      });
+      setReceipt(`${response.invoiceNumber} completed for ${formatMoney(response.grandTotal)}`);
+      setCart([]);
+      await refresh();
+    } catch (ex: unknown) {
+      setError(ex instanceof Error ? ex.message : "Sale failed");
+    }
   }
 
   return (
@@ -77,6 +137,7 @@ export default function PosPage() {
           <div>
             <p className="eyebrow">Retail POS</p>
             <h1>Kalyani Main Store</h1>
+            {error ? <span className="sync-error">{error}</span> : <span className="sync-status">{client ? "API connected" : "Connecting to API..."}</span>}
           </div>
           <a className="secondary-link" href="/">Back office</a>
         </header>
@@ -94,9 +155,9 @@ export default function PosPage() {
 
         <div className="quick-grid">
           {visibleProducts.map((product) => (
-            <button className="product-tile" key={product.id} onClick={() => addProduct(product)}>
+            <button className="product-tile" key={product.id} onClick={() => addProduct(product)} disabled={!client || product.stock <= 0}>
               <span>{product.name}</span>
-              <small>{product.sku}</small>
+              <small>{product.sku} - {product.stock} on hand</small>
               <strong>{formatMoney(product.price)}</strong>
             </button>
           ))}
@@ -106,10 +167,12 @@ export default function PosPage() {
       <aside className="cart-panel">
         <div className="panel-title">
           <h2>Current Cart</h2>
-          <button className="icon-button" aria-label="Select customer" title="Select customer">
-            <UserRound size={18} />
-          </button>
+          <UserRound size={18} />
         </div>
+
+        <select className="customer-select" value={customerId} onChange={(event) => setCustomerId(event.target.value)}>
+          {customers.map((customer) => <option key={customer.id} value={customer.id}>{customer.displayName}</option>)}
+        </select>
 
         <div className="cart-lines">
           {cart.length === 0 ? (
@@ -142,12 +205,12 @@ export default function PosPage() {
         <div className="summary">
           <Row label="Subtotal" value={formatMoney(totals.subtotal)} />
           <Row label="Discount" value={formatMoney(totals.discountTotal)} />
-          <Row label="GST" value={formatMoney(totals.taxTotal)} />
-          <Row label="Total" value={formatMoney(totals.grandTotal)} strong />
+          <Row label="GST estimate" value={formatMoney(totals.taxTotal)} />
+          <Row label="Server tender" value={formatMoney(totals.grandTotal)} strong />
         </div>
 
         <div className="tenders">
-          {["Cash", "UPI", "Card"].map((method) => (
+          {["Cash", "Upi", "Card"].map((method) => (
             <button className={paymentMethod === method ? "selected" : ""} key={method} onClick={() => setPaymentMethod(method)}>
               {method === "Card" ? <CreditCard size={18} /> : <Wallet size={18} />}
               {method}
@@ -155,12 +218,12 @@ export default function PosPage() {
           ))}
         </div>
 
-        <button className="complete-sale" onClick={completeSale} disabled={cart.length === 0}>
+        <button className="complete-sale" onClick={completeSale} disabled={!client || !bootstrap || cart.length === 0}>
           <ReceiptText size={20} />
           Complete {paymentMethod} Sale
         </button>
 
-        {receipt ? <div className="receipt">Receipt {receipt} completed for {formatMoney(totals.grandTotal)}</div> : null}
+        {receipt ? <div className="receipt">Receipt {receipt}</div> : null}
       </aside>
     </main>
   );

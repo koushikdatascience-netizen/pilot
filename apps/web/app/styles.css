@@ -27,6 +27,7 @@ body {
 
 button,
 input,
+select,
 a {
   font: inherit;
 }
@@ -126,6 +127,13 @@ h2 {
   font-weight: 800;
 }
 
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
 .primary-link,
 .complete-sale {
   background: var(--accent);
@@ -137,6 +145,31 @@ h2 {
   background: var(--surface-2);
   color: var(--text);
   padding: 0 14px;
+}
+
+.primary-link:disabled,
+.secondary-link:disabled,
+.product-tile:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.sync-status,
+.sync-error {
+  display: inline-block;
+  margin-top: 8px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.sync-status {
+  color: var(--muted);
+}
+
+.sync-error {
+  color: var(--danger);
+  max-width: min(720px, 100%);
+  overflow-wrap: anywhere;
 }
 
 .metrics {
@@ -181,8 +214,33 @@ th,
   gap: 16px;
 }
 
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 16px;
+}
+
 .panel {
   padding: 18px;
+}
+
+.form-panel {
+  align-content: start;
+  display: grid;
+  gap: 10px;
+}
+
+.form-panel input,
+.form-panel select,
+.customer-select {
+  min-height: 42px;
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+  color: var(--text);
+  padding: 0 12px;
 }
 
 table {
@@ -402,7 +460,8 @@ th {
 
   .metrics,
   .content-grid,
-  .quick-grid {
+  .quick-grid,
+  .form-grid {
     grid-template-columns: 1fr 1fr;
   }
 
@@ -422,6 +481,7 @@ th {
   .metrics,
   .content-grid,
   .quick-grid,
+  .form-grid,
   .tenders {
     grid-template-columns: 1fr;
   }
