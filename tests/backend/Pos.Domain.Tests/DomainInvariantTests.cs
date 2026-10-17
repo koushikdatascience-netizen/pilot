@@ -15,6 +15,16 @@ public sealed class DomainInvariantTests
         Assert.Equal(10.25m, Money.Round(10.245m));
     }
 
+    [Theory]
+    [InlineData("19", "19", "27ABCDE1234F1Z5", true)]
+    [InlineData("19", "27", "19ABCDE1234F1Z5", false)]
+    [InlineData("19", null, "27ABCDE1234F1Z5", false)]
+    [InlineData("19", null, null, true)]
+    public void Customer_state_takes_precedence_over_gstin(string seller, string? customer, string? gstin, bool expected)
+    {
+        Assert.Equal(expected, IndiaGstTaxCalculator.IsIntraState(seller, customer, gstin));
+    }
+
     [Fact]
     public void Inclusive_gst_splits_intra_state_into_cgst_and_sgst()
     {
@@ -112,7 +122,30 @@ public sealed class DomainInvariantTests
     public void Sale_completion_requires_payments_to_equal_grand_total()
     {
         Assert.Throws<InvalidOperationException>(() =>
-            SaleCalculator.EnsurePaymentsCoverTotal(100m, [new SalePaymentInput(PaymentMethod.Cash, 90m, null)]));
+            SaleCalculator.EnsurePaymentsCoverTotal(100m, [new SalePaymentInput(PaymentMethod.Cash, 90m, 90m, null)]));
+    }
+
+    [Fact]
+    public void Split_payments_can_cover_grand_total()
+    {
+        SaleCalculator.EnsurePaymentsCoverTotal(1000m,
+        [
+            new SalePaymentInput(PaymentMethod.Cash, 400m, 400m, null),
+            new SalePaymentInput(PaymentMethod.Upi, 600m, 600m, "UPI-REF")
+        ]);
+    }
+
+    [Fact]
+    public void Cash_tender_may_exceed_amount_due_for_change()
+    {
+        SaleCalculator.EnsurePaymentsCoverTotal(680m, [new SalePaymentInput(PaymentMethod.Cash, 680m, 700m, null)]);
+    }
+
+    [Fact]
+    public void Non_cash_payment_cannot_create_change()
+    {
+        Assert.Throws<InvalidOperationException>(() =>
+            SaleCalculator.EnsurePaymentsCoverTotal(680m, [new SalePaymentInput(PaymentMethod.Card, 680m, 700m, null)]));
     }
 
     private static IReadOnlyList<InventoryTransaction> Movements(Guid tenantId, Guid warehouseId, Guid productId, params decimal[] deltas)

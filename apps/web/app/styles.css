@@ -214,6 +214,10 @@ th,
   gap: 16px;
 }
 
+.sales-section {
+  margin-top: 16px;
+}
+
 .form-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -265,7 +269,8 @@ th {
 
 .icon-button,
 .ghost-danger,
-.qty-stepper button {
+.qty-stepper button,
+.table-action {
   width: 34px;
   height: 34px;
   display: inline-flex;
@@ -275,6 +280,14 @@ th {
   border-radius: 8px;
   background: white;
   color: var(--text);
+}
+
+.table-action {
+  width: auto;
+  min-width: 92px;
+  gap: 6px;
+  padding: 0 10px;
+  font-size: 13px;
 }
 
 .ghost-danger {
@@ -351,7 +364,7 @@ th {
   border-bottom: 0;
   padding: 22px;
   display: grid;
-  grid-template-rows: auto 1fr auto auto auto auto;
+  grid-template-rows: auto auto minmax(160px, 1fr) auto auto auto auto auto auto;
   gap: 16px;
 }
 
@@ -446,6 +459,105 @@ th {
   color: #235423;
   padding: 12px;
   font-weight: 700;
+  display: grid;
+  gap: 8px;
+}
+
+.tender-input {
+  display: grid;
+  grid-template-columns: 1fr 150px;
+  align-items: center;
+  gap: 12px;
+}
+
+.tender-input input {
+  min-height: 38px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0 10px;
+  text-align: right;
+}
+
+.cart-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.cart-actions button,
+.mini-sale button {
+  min-height: 38px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+  color: var(--text);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-weight: 800;
+}
+
+.held-sales {
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+  display: grid;
+  gap: 8px;
+}
+
+.mini-sale {
+  display: grid;
+  grid-template-columns: 1fr auto auto auto;
+  gap: 8px;
+  align-items: center;
+  font-size: 13px;
+}
+
+.mini-sale span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--muted);
+}
+
+.muted {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.payment-panel { border: 1px solid var(--line); margin: 0; min-width: 0; padding: 10px; display: grid; gap: 10px; }
+.login-page { min-height: 100vh; display: grid; place-items: center; padding: 24px; }
+.login-page form { width: min(100%, 360px); }
+.login-page label { display: grid; gap: 6px; }
+.customer-picker { display: grid; gap: 8px; }
+.customer-picker > input { width: 100%; min-height: 36px; border: 1px solid var(--line); padding: 8px; border-radius: 4px; }
+.history-section { margin: 24px 0; }
+.history-filters { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+.history-filters input, .history-filters select { min-height: 38px; min-width: 0; border: 1px solid var(--line); padding: 8px; border-radius: 4px; }
+.table-scroll { overflow-x: auto; }
+.stock-form { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; padding: 20px 0; }
+.stock-form h3 { flex-basis: 100%; margin: 0; }
+.stock-form label { display: grid; gap: 4px; }
+.stock-form input, .stock-form select { min-height: 36px; border: 1px solid var(--line); padding: 6px; border-radius: 4px; max-width: 100%; }
+.workspace { min-width: 0; }
+.history-section > input { min-height: 38px; padding: 8px; margin-top: 12px; border: 1px solid var(--line); border-radius: 4px; }
+.modal-shade { position: fixed; inset: 0; background: #0008; z-index: 10; display: grid; place-items: center; padding: 16px; }
+.product-editor { background: white; padding: 20px; border-radius: 8px; width: min(100%, 480px); max-height: 90vh; overflow: auto; }
+.product-editor label { display: grid; gap: 4px; }
+.product-editor input[type=checkbox] { width: 18px; min-height: 18px; }
+.payment-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; align-items: end; }
+.payment-row label { display: grid; gap: 4px; font-size: 12px; }
+.payment-row input, .payment-row select, .cart-line input { width: 100%; min-width: 0; min-height: 36px; border: 1px solid var(--line); border-radius: 4px; padding: 6px; }
+.cart-panel { display: flex; flex-direction: column; min-width: 0; }
+.cart-lines { flex: 1; }
+.receipt small { display: block; font-size: 11px; }
+:focus-visible { outline: 3px solid #0f766e; outline-offset: 2px; }
+@media print {
+  body * { visibility: hidden; }
+  .receipt, .receipt * { visibility: visible; }
+  .receipt { position: absolute; left: 0; top: 0; width: 80mm; border: 0; box-shadow: none; background: white; color: black; font-size: 11px; padding: 3mm; }
+  .receipt button, .receipt select { display: none; }
+  .receipt.paper-58 { width: 58mm; }
+  @page { margin: 0; size: 80mm auto; }
 }
 
 @media (max-width: 980px) {
@@ -493,6 +605,12 @@ th {
   }
 
   .cart-line {
+    grid-template-columns: 1fr;
+  }
+
+  .tender-input,
+  .cart-actions,
+  .mini-sale {
     grid-template-columns: 1fr;
   }
 }

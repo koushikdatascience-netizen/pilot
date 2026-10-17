@@ -46,6 +46,8 @@ public sealed class Location : TenantEntity
     public string StateCode { get; set; } = "";
     public string? Address { get; set; }
     public Guid DefaultSalesWarehouseId { get; set; }
+    public decimal CashierMaxDiscountPercent { get; set; } = 0.10m;
+    public decimal ManagerMaxDiscountPercent { get; set; } = 1.00m;
 }
 
 public sealed class Terminal : TenantEntity
@@ -123,12 +125,14 @@ public sealed class Customer : TenantEntity
     public string? Phone { get; set; }
     public string? Email { get; set; }
     public string? Gstin { get; set; }
+    public string? StateCode { get; set; }
     public decimal CreditLimit { get; set; }
     public bool IsWalkIn { get; set; }
 }
 
 public sealed class Sale : TenantEntity
 {
+    public string? ReceiptJson { get; set; }
     public Guid LocationId { get; set; }
     public Guid TerminalId { get; set; }
     public Guid? CustomerId { get; set; }
@@ -146,6 +150,7 @@ public sealed class Sale : TenantEntity
 
 public sealed class SaleLine : TenantEntity
 {
+    public string? HsnSacSnapshot { get; set; }
     public Guid SaleId { get; set; }
     public Guid ProductId { get; set; }
     public string ProductNameSnapshot { get; set; } = "";
@@ -168,6 +173,9 @@ public sealed class Payment : TenantEntity
     public Guid SaleId { get; set; }
     public PaymentMethod Method { get; set; }
     public decimal Amount { get; set; }
+    public decimal AmountDue { get; set; }
+    public decimal AmountTendered { get; set; }
+    public decimal ChangeDue { get; set; }
     public string Currency { get; set; } = "INR";
     public PaymentStatus Status { get; set; }
     public string? Provider { get; set; }

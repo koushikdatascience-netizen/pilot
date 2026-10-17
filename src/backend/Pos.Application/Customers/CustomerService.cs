@@ -39,6 +39,7 @@ public sealed class CustomerService
             Phone = string.IsNullOrWhiteSpace(request.Phone) ? null : request.Phone.Trim(),
             Email = string.IsNullOrWhiteSpace(request.Email) ? null : request.Email.Trim(),
             Gstin = string.IsNullOrWhiteSpace(request.Gstin) ? null : request.Gstin.Trim().ToUpperInvariant(),
+            StateCode = string.IsNullOrWhiteSpace(request.StateCode) ? null : request.StateCode.Trim(),
             CreditLimit = request.CreditLimit,
             IsWalkIn = false
         };
@@ -50,7 +51,7 @@ public sealed class CustomerService
         return ToResponse(customer);
     }
 
-    private static CustomerResponse ToResponse(Customer c) => new(c.Id, c.DisplayName, c.Phone, c.Email, c.Gstin, c.CreditLimit, c.IsWalkIn);
+    private static CustomerResponse ToResponse(Customer c) => new(c.Id, c.DisplayName, c.Phone, c.Email, c.Gstin, c.StateCode, c.CreditLimit, c.IsWalkIn);
 
     private static void Validate(CreateCustomerRequest request)
     {

@@ -1,4 +1,7 @@
 using System.Text.Json.Serialization;
+using System.Security.Claims;
+using System.Threading.RateLimiting;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
@@ -21,8 +24,15 @@ using Pos.Infrastructure.Persistence;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Logging.ClearProviders();
-builder.Logging.AddJsonConsole();
+builder.Logging.AddJsonConsole(options => options.IncludeScopes = true);
 builder.Services.AddProblemDetails();
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddPolicy("login", context => RateLimitPartition.GetFixedWindowLimiter(
+        context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+        _ => new FixedWindowRateLimiterOptions { PermitLimit = 10, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
+});
 builder.Services.AddOpenApi("v1");
 builder.Services.AddCors(options =>
 {
@@ -73,6 +83,22 @@ builder.Services.AddAuthorization(options =>
 
 var app = builder.Build();
 
+if (!app.Environment.IsEnvironment("Testing"))
+{
+    var signingKey = builder.Configuration["Auth:SigningKey"] ?? builder.Configuration["AUTH_SIGNING_KEY"];
+    if (string.IsNullOrWhiteSpace(signingKey) || System.Text.Encoding.UTF8.GetByteCount(signingKey) < 32)
+        throw new InvalidOperationException("Configure an authentication signing key of at least 32 bytes.");
+}
+
+app.Use(async (context, next) =>
+{
+    var correlationId = Guid.NewGuid().ToString("N");
+    context.TraceIdentifier = correlationId;
+    context.Response.Headers["X-Correlation-ID"] = correlationId;
+    using var scope = app.Logger.BeginScope(new Dictionary<string, object> { ["CorrelationId"] = correlationId });
+    await next(context);
+});
+
 app.UseExceptionHandler(errorApp =>
 {
     errorApp.Run(async context =>
@@ -85,6 +111,8 @@ app.UseExceptionHandler(errorApp =>
             NotFoundException notFound => (StatusCodes.Status404NotFound, "Not found", notFound.Message, null),
             ForbiddenException => (StatusCodes.Status403Forbidden, "Forbidden", "The requested operation is not allowed.", null),
             ConflictException conflict => (StatusCodes.Status409Conflict, "Conflict", conflict.Message, null),
+            DbUpdateException { InnerException: Npgsql.PostgresException { SqlState: "23505" } } => (StatusCodes.Status409Conflict, "Conflict", "A record with the same identifier already exists.", null),
+            DbUpdateException { InnerException: Npgsql.PostgresException { SqlState: "23503" or "22001" or "22003" } } => (StatusCodes.Status400BadRequest, "Invalid data", "A field or related record is invalid.", null),
             UnauthorizedAccessException => (StatusCodes.Status401Unauthorized, "Unauthorized", "Authentication is required.", null),
             _ => (StatusCodes.Status500InternalServerError, "Unexpected error", "The request could not be completed.", null)
         };
@@ -114,6 +142,16 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseAuthentication();
+app.Use(async (context, next) =>
+{
+    using var scope = app.Logger.BeginScope(new Dictionary<string, object?>
+    {
+        ["TenantId"] = context.User.FindFirstValue("tenant_id"),
+        ["UserId"] = context.User.FindFirstValue(ClaimTypes.NameIdentifier)
+    });
+    await next(context);
+});
+app.UseRateLimiter();
 app.UseAuthorization();
 app.MapOpenApi("/openapi/{documentName}.json");
 
@@ -127,10 +165,11 @@ app.MapGet("/health/ready", async (CommerceDbContext db, CancellationToken cance
 var api = app.MapGroup("/api/v1");
 
 api.MapPost("/auth/login", async (AuthService auth, LoginRequest request, CancellationToken cancellationToken) =>
-    Results.Ok(await auth.LoginAsync(request, cancellationToken))).AllowAnonymous();
+    Results.Ok(await auth.LoginAsync(request, cancellationToken))).AllowAnonymous().RequireRateLimiting("login");
 
 var protectedApi = api.MapGroup("").RequireAuthorization();
 protectedApi.MapGet("/tenancy/bootstrap", async (TenancyService service, CancellationToken cancellationToken) => Results.Ok(await service.BootstrapAsync(cancellationToken)));
+protectedApi.MapGet("/tenancy/terminals", async (TenancyService service, CancellationToken cancellationToken) => Results.Ok(await service.TerminalsAsync(cancellationToken)));
 
 protectedApi.MapGet("/categories", async (CommerceDbContext db, ITenantContext tenant, CancellationToken cancellationToken) =>
     Results.Ok(await db.Categories.AsNoTracking().Where(c => c.TenantId == tenant.TenantId).OrderBy(c => c.Name).Select(c => new { c.Id, c.Name, c.ParentCategoryId }).ToArrayAsync(cancellationToken)));
@@ -138,9 +177,16 @@ protectedApi.MapGet("/categories", async (CommerceDbContext db, ITenantContext t
 protectedApi.MapGet("/tax-categories", async (CommerceDbContext db, ITenantContext tenant, CancellationToken cancellationToken) =>
     Results.Ok(await db.TaxCategories.AsNoTracking().Where(t => t.TenantId == tenant.TenantId).OrderBy(t => t.Name).Select(t => new { t.Id, t.Name, t.CountryCode, t.Rate, t.TaxBehavior }).ToArrayAsync(cancellationToken)));
 
-protectedApi.MapGet("/products", async (ProductService service, string? q, CancellationToken cancellationToken) => Results.Ok(await service.ListAsync(q, cancellationToken)));
+protectedApi.MapGet("/products", async (ProductService service, string? q, string? barcode, string? sku, int? page, int? pageSize, bool? includeInactive, CancellationToken cancellationToken) =>
+    Results.Ok(await service.ListAsync(q, barcode, sku, page ?? 1, pageSize ?? 50, includeInactive ?? false, cancellationToken)));
 protectedApi.MapPost("/products", [Authorize(Policy = nameof(Permission.ManageCatalog))] async (ProductService service, CreateProductRequest request, CancellationToken cancellationToken) =>
     Results.Created("/api/v1/products", await service.CreateAsync(request, cancellationToken)));
+protectedApi.MapPut("/products/{id:guid}", [Authorize(Policy = nameof(Permission.ManageCatalog))] async (ProductService service, Guid id, UpdateProductRequest request, CancellationToken cancellationToken) =>
+    Results.Ok(await service.UpdateAsync(id, request, cancellationToken)));
+protectedApi.MapPost("/products/{id:guid}/activate", [Authorize(Policy = nameof(Permission.ManageCatalog))] async (ProductService service, Guid id, CancellationToken cancellationToken) =>
+    Results.Ok(await service.SetActiveAsync(id, true, cancellationToken)));
+protectedApi.MapPost("/products/{id:guid}/deactivate", [Authorize(Policy = nameof(Permission.ManageCatalog))] async (ProductService service, Guid id, CancellationToken cancellationToken) =>
+    Results.Ok(await service.SetActiveAsync(id, false, cancellationToken)));
 
 protectedApi.MapGet("/customers", async (CustomerService service, string? q, CancellationToken cancellationToken) => Results.Ok(await service.ListAsync(q, cancellationToken)));
 protectedApi.MapPost("/customers", async (CustomerService service, CreateCustomerRequest request, CancellationToken cancellationToken) =>
@@ -149,10 +195,21 @@ protectedApi.MapPost("/customers", async (CustomerService service, CreateCustome
 protectedApi.MapGet("/inventory/balances", async (InventoryService service, CancellationToken cancellationToken) => Results.Ok(await service.BalancesAsync(cancellationToken)));
 protectedApi.MapPost("/inventory/opening-stock", [Authorize(Policy = nameof(Permission.ManageInventory))] async (InventoryService service, OpeningStockRequest request, CancellationToken cancellationToken) =>
     Results.Created("/api/v1/inventory/transactions", await service.AddOpeningStockAsync(request, cancellationToken)));
+protectedApi.MapPost("/inventory/adjustments", [Authorize(Policy = nameof(Permission.ManageInventory))] async (InventoryService service, StockAdjustmentRequest request, CancellationToken cancellationToken) =>
+    Results.Created("/api/v1/inventory/transactions", await service.AdjustAsync(request, cancellationToken)));
 
 protectedApi.MapPost("/sales/complete", [Authorize(Policy = nameof(Permission.CompleteSale))] async (CompleteSaleService service, CompleteSaleRequest request, CancellationToken cancellationToken) =>
     Results.Created("/api/v1/sales", await service.CompleteAsync(request, cancellationToken)));
-protectedApi.MapGet("/sales", async (CompleteSaleService service, CancellationToken cancellationToken) => Results.Ok(await service.ListAsync(cancellationToken)));
+protectedApi.MapPost("/sales/hold", [Authorize(Policy = nameof(Permission.CompleteSale))] async (CompleteSaleService service, HoldSaleRequest request, CancellationToken cancellationToken) =>
+    Results.Created("/api/v1/sales/held", await service.HoldAsync(request, cancellationToken)));
+protectedApi.MapPut("/sales/{id:guid}/cart", [Authorize(Policy = nameof(Permission.CompleteSale))] async (CompleteSaleService service, Guid id, HoldSaleRequest request, CancellationToken cancellationToken) =>
+    Results.Ok(await service.HoldAsync(request, cancellationToken, id)));
+protectedApi.MapPost("/sales/{id:guid}/complete-held", [Authorize(Policy = nameof(Permission.CompleteSale))] async (CompleteSaleService service, Guid id, CompleteHeldSaleRequest request, CancellationToken cancellationToken) =>
+    Results.Created($"/api/v1/sales/{id}", await service.CompleteHeldAsync(id, request, cancellationToken)));
+protectedApi.MapGet("/sales", async (CompleteSaleService service, SaleStatus? status, DateTimeOffset? fromUtc, DateTimeOffset? toUtc, CancellationToken cancellationToken) =>
+    Results.Ok(await service.ListAsync(status, fromUtc, toUtc, cancellationToken)));
+protectedApi.MapGet("/sales/history", async (CompleteSaleService service, string? invoice, Guid? customerId, Guid? terminalId, PaymentMethod? method, DateTimeOffset? fromUtc, DateTimeOffset? toUtc, int? page, int? pageSize, CancellationToken cancellationToken) =>
+    Results.Ok(await service.HistoryAsync(invoice, customerId, terminalId, method, fromUtc, toUtc, page ?? 1, pageSize ?? 20, cancellationToken)));
 
 protectedApi.MapGet("/reports/today", [Authorize(Policy = nameof(Permission.ViewReports))] async (ReportingService service, CancellationToken cancellationToken) =>
     Results.Ok(await service.TodayAsync(cancellationToken)));

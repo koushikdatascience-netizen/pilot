@@ -3,7 +3,7 @@ using Pos.Domain.Common;
 namespace Pos.Domain.Sales;
 
 public enum SaleStatus { Draft, Held, Completed, Voided, Refunded }
-public enum PaymentMethod { Cash, Upi, Card, Wallet, Account }
+public enum PaymentMethod { Cash, Upi, Card, Wallet, Credit }
 public enum PaymentStatus { Pending, Captured, Failed, Refunded }
 public enum SyncStatus { LocalOnly, PendingSync, Synced, Failed }
 
@@ -50,6 +50,9 @@ public sealed record Payment : TenantEntity
     public required Guid SaleId { get; init; }
     public required PaymentMethod Method { get; init; }
     public required decimal Amount { get; init; }
+    public required decimal AmountDue { get; init; }
+    public required decimal AmountTendered { get; init; }
+    public required decimal ChangeDue { get; init; }
     public required string Currency { get; init; }
     public required PaymentStatus Status { get; init; }
     public string? Provider { get; init; }

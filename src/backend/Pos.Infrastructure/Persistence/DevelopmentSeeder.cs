@@ -51,7 +51,7 @@ public sealed class DevelopmentSeeder
 
         if (!await _db.Locations.AnyAsync(l => l.Id == DemoLocationId, cancellationToken))
         {
-            _db.Locations.Add(new Location { Id = DemoLocationId, TenantId = DemoTenantId, OrganizationId = DemoOrganizationId, BusinessId = DemoBusinessId, Name = "Kalyani Main Store", Code = "KAL-01", StateCode = "19", Address = "Kalyani, West Bengal", DefaultSalesWarehouseId = DemoWarehouseId });
+            _db.Locations.Add(new Location { Id = DemoLocationId, TenantId = DemoTenantId, OrganizationId = DemoOrganizationId, BusinessId = DemoBusinessId, Name = "Kalyani Main Store", Code = "KAL-01", StateCode = "19", Address = "Kalyani, West Bengal", DefaultSalesWarehouseId = DemoWarehouseId, CashierMaxDiscountPercent = 0.10m, ManagerMaxDiscountPercent = 1.00m });
         }
 
         if (!await _db.Terminals.AnyAsync(t => t.Id == DemoTerminalId, cancellationToken))
@@ -85,7 +85,7 @@ public sealed class DevelopmentSeeder
         if (!await _db.Roles.AnyAsync(r => r.Id == cashierRoleId, cancellationToken))
         {
             _db.Roles.Add(new Role { Id = cashierRoleId, TenantId = DemoTenantId, Name = "Cashier" });
-            foreach (var permission in new[] { Permission.CompleteSale, Permission.ApplyDiscount })
+            foreach (var permission in new[] { Permission.CompleteSale })
             {
                 _db.RolePermissions.Add(new RolePermission { RoleId = cashierRoleId, Permission = permission });
             }
@@ -170,12 +170,12 @@ public sealed class DevelopmentSeeder
     {
         if (!await _db.Customers.AnyAsync(c => c.Id == Guid.Parse("cccccccc-cccc-cccc-cccc-ccccccccccc1"), cancellationToken))
         {
-            _db.Customers.Add(new Customer { Id = Guid.Parse("cccccccc-cccc-cccc-cccc-ccccccccccc1"), TenantId = DemoTenantId, DisplayName = "Walk-in Customer", IsWalkIn = true });
+            _db.Customers.Add(new Customer { Id = Guid.Parse("cccccccc-cccc-cccc-cccc-ccccccccccc1"), TenantId = DemoTenantId, DisplayName = "Walk-in Customer", StateCode = "19", IsWalkIn = true });
         }
 
         if (!await _db.Customers.AnyAsync(c => c.Id == Guid.Parse("cccccccc-cccc-cccc-cccc-ccccccccccc2"), cancellationToken))
         {
-            _db.Customers.Add(new Customer { Id = Guid.Parse("cccccccc-cccc-cccc-cccc-ccccccccccc2"), TenantId = DemoTenantId, DisplayName = "Ananya Sen", Phone = "+919830000001", Email = "ananya@example.test", CreditLimit = 5000 });
+            _db.Customers.Add(new Customer { Id = Guid.Parse("cccccccc-cccc-cccc-cccc-ccccccccccc2"), TenantId = DemoTenantId, DisplayName = "Ananya Sen", Phone = "+919830000001", Email = "ananya@example.test", StateCode = "19", CreditLimit = 5000 });
         }
     }
 

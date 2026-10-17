@@ -1,0 +1,69 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+
+      - name: Restore backend
+        run: dotnet restore UniversalCommerce.sln
+
+      - name: Build backend
+        run: dotnet build UniversalCommerce.sln --no-restore
+
+      - name: Test backend
+        run: dotnet test UniversalCommerce.sln --no-build --logger "trx;LogFileName=backend-tests.trx"
+        env:
+          POSTGRES_TEST_ADMIN_CONNECTION_STRING: Host=localhost;Port=5432;Database=postgres;Username=postgres
+
+      - name: Install frontend
+        working-directory: apps/web
+        run: npm ci
+
+      - name: Test frontend
+        working-directory: apps/web
+        run: npm test
+
+      - name: Build frontend
+        working-directory: apps/web
+        run: npm run build
+
+      - name: Install browser
+        working-directory: apps/web
+        run: npx playwright install --with-deps chromium
+
+      - name: Checkout E2E
+        working-directory: apps/web
+        run: npm run test:e2e
+        env:
+          POSTGRES_CONNECTION_STRING: Host=localhost;Port=5432;Database=postgres;Username=postgres
+          AUTH_SIGNING_KEY: ci-only-signing-key-at-least-32-bytes

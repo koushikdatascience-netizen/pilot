@@ -24,6 +24,17 @@ run("money display uses stable two-decimal INR-compatible formatting", () => {
   assert.equal(formatMoney(12.5), "Rs 12.50");
 });
 
+run("exclusive tax is added after the line discount", () => {
+  assert.deepEqual(calculateCartTotals([
+    { price: 100, quantity: 2, discount: 20, taxRate: 0.18, taxBehavior: "Exclusive" }
+  ]), { subtotal: 200, discountTotal: 20, taxTotal: 32.4, grandTotal: 212.4 });
+});
+
+run("empty and fractional-quantity carts have stable totals", () => {
+  assert.equal(calculateCartTotals([]).grandTotal, 0);
+  assert.equal(calculateCartTotals([{ price: 80, quantity: 0.125, discount: 0, taxRate: 0, taxBehavior: "Inclusive" }]).grandTotal, 10);
+});
+
 function run(name, fn) {
   try {
     fn();

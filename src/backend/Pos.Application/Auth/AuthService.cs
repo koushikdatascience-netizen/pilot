@@ -38,8 +38,12 @@ public sealed class AuthService
         {
             throw new ForbiddenException("Invalid credentials.");
         }
+        if (!await _db.Tenants.AnyAsync(t => t.Id == user.TenantId && t.Status == Pos.Domain.Tenancy.TenantStatus.Active, cancellationToken))
+            throw new ForbiddenException("Account is inactive.");
 
-        var roleIds = await _db.UserRoles.Where(ur => ur.UserId == user.Id).Select(ur => ur.RoleId).ToArrayAsync(cancellationToken);
+        var roleIds = await _db.UserRoles.Where(ur => ur.UserId == user.Id)
+            .Join(_db.Roles.Where(r => r.TenantId == user.TenantId), ur => ur.RoleId, r => r.Id, (ur, r) => r.Id)
+            .ToArrayAsync(cancellationToken);
         var permissions = await _db.RolePermissions
             .Where(rp => roleIds.Contains(rp.RoleId))
             .Select(rp => rp.Permission)

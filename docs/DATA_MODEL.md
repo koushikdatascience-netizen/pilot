@@ -150,3 +150,14 @@ OutboxEvent:
 - Sales by tenant, location, and completed timestamp.
 - Inventory lookup by tenant, warehouse, and product.
 - Customer phone by tenant.
+
+## Milestone 2 Additions
+
+- Location: cashier/manager maximum discount ratios.
+- Customer: state code, independent of GSTIN.
+- Payment: AmountDue, AmountTendered, ChangeDue; Credit replaces the former Account method.
+- Sale: immutable receipt-header JSON captured at completion.
+- SaleLine: HSN/SAC snapshot for new transactions.
+- Tenant/Id alternate keys and composite foreign keys across tenant-owned relationships.
+- Held/Draft sales use the same aggregate; their temporary numbers are replaced by real invoices on completion.
+- Upgrade migration backfills legacy payment amounts and initial discount settings without inventing missing historical receipt details.

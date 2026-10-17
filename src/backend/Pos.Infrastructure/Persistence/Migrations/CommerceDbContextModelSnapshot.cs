@@ -72,6 +72,8 @@ namespace Pos.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasAlternateKey("TenantId", "Id");
+
                     b.HasIndex("TenantId");
 
                     b.HasIndex("TenantId", "EntityName", "EntityId");
@@ -113,8 +115,6 @@ namespace Pos.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("OrganizationId");
-
                     b.HasIndex("TenantId");
 
                     b.HasIndex("TenantId", "OrganizationId", "Name")
@@ -152,11 +152,11 @@ namespace Pos.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("ParentCategoryId");
-
                     b.HasIndex("TenantId");
 
                     b.HasIndex("TenantId", "Name");
+
+                    b.HasIndex("TenantId", "ParentCategoryId");
 
                     b.ToTable("categories", (string)null);
                 });
@@ -193,6 +193,10 @@ namespace Pos.Infrastructure.Persistence.Migrations
                     b.Property<string>("Phone")
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)");
+
+                    b.Property<string>("StateCode")
+                        .HasMaxLength(8)
+                        .HasColumnType("character varying(8)");
 
                     b.Property<Guid>("TenantId")
                         .HasColumnType("uuid");
@@ -269,13 +273,13 @@ namespace Pos.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("LocationId");
-
-                    b.HasIndex("ProductId");
+                    b.HasAlternateKey("TenantId", "Id");
 
                     b.HasIndex("TenantId");
 
-                    b.HasIndex("WarehouseId");
+                    b.HasIndex("TenantId", "LocationId");
+
+                    b.HasIndex("TenantId", "ProductId");
 
                     b.HasIndex("TenantId", "SourceDocumentType", "SourceDocumentId");
 
@@ -320,8 +324,6 @@ namespace Pos.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("LocationId");
-
                     b.HasIndex("TenantId", "LocationId", "FinancialPeriod", "Prefix")
                         .IsUnique();
 
@@ -341,6 +343,10 @@ namespace Pos.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("BusinessId")
                         .HasColumnType("uuid");
 
+                    b.Property<decimal>("CashierMaxDiscountPercent")
+                        .HasPrecision(9, 6)
+                        .HasColumnType("numeric(9,6)");
+
                     b.Property<string>("Code")
                         .IsRequired()
                         .HasMaxLength(40)
@@ -351,6 +357,10 @@ namespace Pos.Infrastructure.Persistence.Migrations
 
                     b.Property<Guid>("DefaultSalesWarehouseId")
                         .HasColumnType("uuid");
+
+                    b.Property<decimal>("ManagerMaxDiscountPercent")
+                        .HasPrecision(9, 6)
+                        .HasColumnType("numeric(9,6)");
 
                     b.Property<string>("Name")
                         .IsRequired()
@@ -377,16 +387,16 @@ namespace Pos.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("BusinessId");
-
                     b.HasIndex("DefaultSalesWarehouseId");
-
-                    b.HasIndex("OrganizationId");
 
                     b.HasIndex("TenantId");
 
+                    b.HasIndex("TenantId", "BusinessId");
+
                     b.HasIndex("TenantId", "Code")
                         .IsUnique();
+
+                    b.HasIndex("TenantId", "OrganizationId");
 
                     b.ToTable("locations", (string)null);
                 });
@@ -470,6 +480,8 @@ namespace Pos.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasAlternateKey("TenantId", "Id");
+
                     b.HasIndex("TenantId");
 
                     b.HasIndex("ProcessedAtUtc", "OccurredAtUtc");
@@ -487,8 +499,20 @@ namespace Pos.Infrastructure.Persistence.Migrations
                         .HasPrecision(18, 2)
                         .HasColumnType("numeric(18,2)");
 
+                    b.Property<decimal>("AmountDue")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<decimal>("AmountTendered")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
                     b.Property<DateTimeOffset?>("CapturedAtUtc")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<decimal>("ChangeDue")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
 
                     b.Property<DateTimeOffset>("CreatedAtUtc")
                         .HasColumnType("timestamp with time zone");
@@ -531,9 +555,11 @@ namespace Pos.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("SaleId");
+                    b.HasAlternateKey("TenantId", "Id");
 
                     b.HasIndex("TenantId");
+
+                    b.HasIndex("TenantId", "SaleId");
 
                     b.ToTable("payments", (string)null);
                 });
@@ -603,17 +629,17 @@ namespace Pos.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("CategoryId");
-
-                    b.HasIndex("TaxCategoryId");
-
                     b.HasIndex("TenantId");
 
                     b.HasIndex("TenantId", "Barcode")
                         .IsUnique();
 
+                    b.HasIndex("TenantId", "CategoryId");
+
                     b.HasIndex("TenantId", "Sku")
                         .IsUnique();
+
+                    b.HasIndex("TenantId", "TaxCategoryId");
 
                     b.HasIndex("TenantId", "Name", "Sku");
 
@@ -645,6 +671,8 @@ namespace Pos.Infrastructure.Persistence.Migrations
                         .HasColumnType("bigint");
 
                     b.HasKey("Id");
+
+                    b.HasAlternateKey("TenantId", "Id");
 
                     b.HasIndex("TenantId");
 
@@ -707,6 +735,9 @@ namespace Pos.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("LocationId")
                         .HasColumnType("uuid");
 
+                    b.Property<string>("ReceiptJson")
+                        .HasColumnType("jsonb");
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasMaxLength(32)
@@ -740,13 +771,9 @@ namespace Pos.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("CustomerId");
-
-                    b.HasIndex("LocationId");
-
                     b.HasIndex("TenantId");
 
-                    b.HasIndex("TerminalId");
+                    b.HasIndex("TenantId", "CustomerId");
 
                     b.HasIndex("TenantId", "LocationId", "CompletedAtUtc");
 
@@ -779,6 +806,10 @@ namespace Pos.Infrastructure.Persistence.Migrations
                     b.Property<decimal>("DiscountAmount")
                         .HasPrecision(18, 2)
                         .HasColumnType("numeric(18,2)");
+
+                    b.Property<string>("HsnSacSnapshot")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
 
                     b.Property<decimal>("IgstAmount")
                         .HasPrecision(18, 2)
@@ -840,11 +871,11 @@ namespace Pos.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("ProductId");
-
-                    b.HasIndex("SaleId");
+                    b.HasAlternateKey("TenantId", "Id");
 
                     b.HasIndex("TenantId");
+
+                    b.HasIndex("TenantId", "ProductId");
 
                     b.HasIndex("TenantId", "SaleId");
 
@@ -959,12 +990,12 @@ namespace Pos.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("LocationId");
-
                     b.HasIndex("TenantId");
 
                     b.HasIndex("TenantId", "DeviceCode")
                         .IsUnique();
+
+                    b.HasIndex("TenantId", "LocationId");
 
                     b.ToTable("terminals", (string)null);
                 });
@@ -1007,6 +1038,8 @@ namespace Pos.Infrastructure.Persistence.Migrations
                         .HasColumnType("bigint");
 
                     b.HasKey("Id");
+
+                    b.HasAlternateKey("TenantId", "Id");
 
                     b.HasIndex("TenantId");
 
@@ -1065,12 +1098,12 @@ namespace Pos.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("LocationId");
-
                     b.HasIndex("TenantId");
 
                     b.HasIndex("TenantId", "Code")
                         .IsUnique();
+
+                    b.HasIndex("TenantId", "LocationId");
 
                     b.ToTable("warehouses", (string)null);
                 });
@@ -1086,31 +1119,33 @@ namespace Pos.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("Pos.Infrastructure.Persistence.Business", b =>
                 {
-                    b.HasOne("Pos.Infrastructure.Persistence.Organization", null)
-                        .WithMany()
-                        .HasForeignKey("OrganizationId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
                     b.HasOne("Pos.Infrastructure.Persistence.Tenant", null)
                         .WithMany()
                         .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Pos.Infrastructure.Persistence.Organization", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "OrganizationId")
+                        .HasPrincipalKey("TenantId", "Id")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });
 
             modelBuilder.Entity("Pos.Infrastructure.Persistence.Category", b =>
                 {
-                    b.HasOne("Pos.Infrastructure.Persistence.Category", null)
-                        .WithMany()
-                        .HasForeignKey("ParentCategoryId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
                     b.HasOne("Pos.Infrastructure.Persistence.Tenant", null)
                         .WithMany()
                         .HasForeignKey("TenantId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.HasOne("Pos.Infrastructure.Persistence.Category", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ParentCategoryId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict);
                 });
 
             modelBuilder.Entity("Pos.Infrastructure.Persistence.Customer", b =>
@@ -1124,27 +1159,30 @@ namespace Pos.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("Pos.Infrastructure.Persistence.InventoryTransaction", b =>
                 {
-                    b.HasOne("Pos.Infrastructure.Persistence.Location", null)
-                        .WithMany()
-                        .HasForeignKey("LocationId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("Pos.Infrastructure.Persistence.Product", null)
-                        .WithMany()
-                        .HasForeignKey("ProductId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
                     b.HasOne("Pos.Infrastructure.Persistence.Tenant", null)
                         .WithMany()
                         .HasForeignKey("TenantId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("Pos.Infrastructure.Persistence.Location", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "LocationId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Pos.Infrastructure.Persistence.Product", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ProductId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
                     b.HasOne("Pos.Infrastructure.Persistence.Warehouse", null)
                         .WithMany()
-                        .HasForeignKey("WarehouseId")
+                        .HasForeignKey("TenantId", "WarehouseId")
+                        .HasPrincipalKey("TenantId", "Id")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });
@@ -1153,28 +1191,31 @@ namespace Pos.Infrastructure.Persistence.Migrations
                 {
                     b.HasOne("Pos.Infrastructure.Persistence.Location", null)
                         .WithMany()
-                        .HasForeignKey("LocationId")
+                        .HasForeignKey("TenantId", "LocationId")
+                        .HasPrincipalKey("TenantId", "Id")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });
 
             modelBuilder.Entity("Pos.Infrastructure.Persistence.Location", b =>
                 {
+                    b.HasOne("Pos.Infrastructure.Persistence.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
                     b.HasOne("Pos.Infrastructure.Persistence.Business", null)
                         .WithMany()
-                        .HasForeignKey("BusinessId")
+                        .HasForeignKey("TenantId", "BusinessId")
+                        .HasPrincipalKey("TenantId", "Id")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
                     b.HasOne("Pos.Infrastructure.Persistence.Organization", null)
                         .WithMany()
-                        .HasForeignKey("OrganizationId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("Pos.Infrastructure.Persistence.Tenant", null)
-                        .WithMany()
-                        .HasForeignKey("TenantId")
+                        .HasForeignKey("TenantId", "OrganizationId")
+                        .HasPrincipalKey("TenantId", "Id")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });
@@ -1199,36 +1240,39 @@ namespace Pos.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("Pos.Infrastructure.Persistence.Payment", b =>
                 {
-                    b.HasOne("Pos.Infrastructure.Persistence.Sale", null)
-                        .WithMany()
-                        .HasForeignKey("SaleId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
                     b.HasOne("Pos.Infrastructure.Persistence.Tenant", null)
                         .WithMany()
                         .HasForeignKey("TenantId")
                         .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Pos.Infrastructure.Persistence.Sale", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "SaleId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });
 
             modelBuilder.Entity("Pos.Infrastructure.Persistence.Product", b =>
                 {
+                    b.HasOne("Pos.Infrastructure.Persistence.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
                     b.HasOne("Pos.Infrastructure.Persistence.Category", null)
                         .WithMany()
-                        .HasForeignKey("CategoryId")
+                        .HasForeignKey("TenantId", "CategoryId")
+                        .HasPrincipalKey("TenantId", "Id")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
                     b.HasOne("Pos.Infrastructure.Persistence.TaxCategory", null)
                         .WithMany()
-                        .HasForeignKey("TaxCategoryId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("Pos.Infrastructure.Persistence.Tenant", null)
-                        .WithMany()
-                        .HasForeignKey("TenantId")
+                        .HasForeignKey("TenantId", "TaxCategoryId")
+                        .HasPrincipalKey("TenantId", "Id")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });
@@ -1253,48 +1297,53 @@ namespace Pos.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("Pos.Infrastructure.Persistence.Sale", b =>
                 {
-                    b.HasOne("Pos.Infrastructure.Persistence.Customer", null)
-                        .WithMany()
-                        .HasForeignKey("CustomerId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.HasOne("Pos.Infrastructure.Persistence.Location", null)
-                        .WithMany()
-                        .HasForeignKey("LocationId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
                     b.HasOne("Pos.Infrastructure.Persistence.Tenant", null)
                         .WithMany()
                         .HasForeignKey("TenantId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("Pos.Infrastructure.Persistence.Customer", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "CustomerId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Pos.Infrastructure.Persistence.Location", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "LocationId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
                     b.HasOne("Pos.Infrastructure.Persistence.Terminal", null)
                         .WithMany()
-                        .HasForeignKey("TerminalId")
+                        .HasForeignKey("TenantId", "TerminalId")
+                        .HasPrincipalKey("TenantId", "Id")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });
 
             modelBuilder.Entity("Pos.Infrastructure.Persistence.SaleLine", b =>
                 {
+                    b.HasOne("Pos.Infrastructure.Persistence.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
                     b.HasOne("Pos.Infrastructure.Persistence.Product", null)
                         .WithMany()
-                        .HasForeignKey("ProductId")
+                        .HasForeignKey("TenantId", "ProductId")
+                        .HasPrincipalKey("TenantId", "Id")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
                     b.HasOne("Pos.Infrastructure.Persistence.Sale", null)
                         .WithMany()
-                        .HasForeignKey("SaleId")
+                        .HasForeignKey("TenantId", "SaleId")
+                        .HasPrincipalKey("TenantId", "Id")
                         .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("Pos.Infrastructure.Persistence.Tenant", null)
-                        .WithMany()
-                        .HasForeignKey("TenantId")
-                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });
 
@@ -1309,15 +1358,16 @@ namespace Pos.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("Pos.Infrastructure.Persistence.Terminal", b =>
                 {
-                    b.HasOne("Pos.Infrastructure.Persistence.Location", null)
-                        .WithMany()
-                        .HasForeignKey("LocationId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
                     b.HasOne("Pos.Infrastructure.Persistence.Tenant", null)
                         .WithMany()
                         .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Pos.Infrastructure.Persistence.Location", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "LocationId")
+                        .HasPrincipalKey("TenantId", "Id")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });
@@ -1348,15 +1398,16 @@ namespace Pos.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("Pos.Infrastructure.Persistence.Warehouse", b =>
                 {
-                    b.HasOne("Pos.Infrastructure.Persistence.Location", null)
-                        .WithMany()
-                        .HasForeignKey("LocationId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
                     b.HasOne("Pos.Infrastructure.Persistence.Tenant", null)
                         .WithMany()
                         .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Pos.Infrastructure.Persistence.Location", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "LocationId")
+                        .HasPrincipalKey("TenantId", "Id")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });

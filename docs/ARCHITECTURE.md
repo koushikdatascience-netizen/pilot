@@ -74,6 +74,14 @@ Sale completion is the critical aggregate transaction. It:
 
 Inventory concurrency is guarded by the serializable transaction around stock reads and ledger writes, unique idempotency constraints, and database row-version checks for invoice sequence updates.
 
+Milestone 2 adds transaction-scoped PostgreSQL advisory locks for stock keys, invoice sequences, held-sale transitions, and idempotent commands. Stock decreases and checkout share the same stock lock. Serialization/deadlock failures retry up to five attempts with randomized exponential backoff; validation and permission failures do not retry. Unique failures retry only for the sale idempotency key.
+
+Held/Draft carts store line snapshots without payments or stock deduction. Cart updates preserve sale identity and are allowed only before completion. Completion rechecks stock, terminal status, and discount permission, then records payments, ledger movements, audit, and outbox atomically. Receipt headers and HSN/SAC are captured for new sales; historical missing snapshots are not reconstructed.
+
+Tenant-owned entity relationships use composite tenant/identifier foreign keys. User-role assignments are validated on save and role loading is tenant-scoped. Members with sale permission currently have tenant-wide active-terminal access.
+
+The web app uses an explicit sign-in route and session-scoped bearer token. Login is rate-limited; disabled users and tenants are rejected on authenticated requests. Request correlation scopes are included in JSON logs. The custom HMAC bearer format is retained for this milestone.
+
 ## Offline And Sync Strategy
 
 The product is offline-first by design. Milestone 1.5 keeps the future edge path intact:

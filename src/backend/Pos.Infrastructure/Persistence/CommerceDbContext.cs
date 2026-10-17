@@ -72,7 +72,7 @@ public sealed class CommerceDbContext : DbContext
             entity.Property(x => x.Name).HasMaxLength(160).IsRequired();
             entity.Property(x => x.BusinessType).HasConversion<string>().HasMaxLength(32).IsRequired();
             entity.HasIndex(x => new { x.TenantId, x.OrganizationId, x.Name }).IsUnique();
-            entity.HasOne<Organization>().WithMany().HasForeignKey(x => x.OrganizationId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Organization>().WithMany().HasForeignKey(x => new { x.TenantId, x.OrganizationId }).HasPrincipalKey(x => new { x.TenantId, x.Id }).OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<Location>(entity =>
@@ -81,10 +81,12 @@ public sealed class CommerceDbContext : DbContext
             entity.Property(x => x.Code).HasMaxLength(40).IsRequired();
             entity.Property(x => x.StateCode).HasMaxLength(8).IsRequired();
             entity.Property(x => x.Address).HasMaxLength(500);
+            entity.Property(x => x.CashierMaxDiscountPercent).HasPrecision(9, 6);
+            entity.Property(x => x.ManagerMaxDiscountPercent).HasPrecision(9, 6);
             entity.HasIndex(x => new { x.TenantId, x.Code }).IsUnique();
             entity.HasIndex(x => x.DefaultSalesWarehouseId);
-            entity.HasOne<Organization>().WithMany().HasForeignKey(x => x.OrganizationId).OnDelete(DeleteBehavior.Restrict);
-            entity.HasOne<Business>().WithMany().HasForeignKey(x => x.BusinessId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Organization>().WithMany().HasForeignKey(x => new { x.TenantId, x.OrganizationId }).HasPrincipalKey(x => new { x.TenantId, x.Id }).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Business>().WithMany().HasForeignKey(x => new { x.TenantId, x.BusinessId }).HasPrincipalKey(x => new { x.TenantId, x.Id }).OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<Terminal>(entity =>
@@ -93,7 +95,7 @@ public sealed class CommerceDbContext : DbContext
             entity.Property(x => x.DeviceCode).HasMaxLength(80).IsRequired();
             entity.Property(x => x.Status).HasConversion<string>().HasMaxLength(32).IsRequired();
             entity.HasIndex(x => new { x.TenantId, x.DeviceCode }).IsUnique();
-            entity.HasOne<Location>().WithMany().HasForeignKey(x => x.LocationId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Location>().WithMany().HasForeignKey(x => new { x.TenantId, x.LocationId }).HasPrincipalKey(x => new { x.TenantId, x.Id }).OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<Warehouse>(entity =>
@@ -101,7 +103,7 @@ public sealed class CommerceDbContext : DbContext
             entity.Property(x => x.Name).HasMaxLength(160).IsRequired();
             entity.Property(x => x.Code).HasMaxLength(40).IsRequired();
             entity.HasIndex(x => new { x.TenantId, x.Code }).IsUnique();
-            entity.HasOne<Location>().WithMany().HasForeignKey(x => x.LocationId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Location>().WithMany().HasForeignKey(x => new { x.TenantId, x.LocationId }).HasPrincipalKey(x => new { x.TenantId, x.Id }).OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<Role>(entity =>
@@ -138,7 +140,7 @@ public sealed class CommerceDbContext : DbContext
         {
             entity.Property(x => x.Name).HasMaxLength(160).IsRequired();
             entity.HasIndex(x => new { x.TenantId, x.Name });
-            entity.HasOne<Category>().WithMany().HasForeignKey(x => x.ParentCategoryId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Category>().WithMany().HasForeignKey(x => new { x.TenantId, x.ParentCategoryId }).HasPrincipalKey(x => new { x.TenantId, x.Id }).OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<TaxCategory>(entity =>
@@ -161,8 +163,8 @@ public sealed class CommerceDbContext : DbContext
             entity.HasIndex(x => new { x.TenantId, x.Sku }).IsUnique();
             entity.HasIndex(x => new { x.TenantId, x.Barcode }).IsUnique();
             entity.HasIndex(x => new { x.TenantId, x.Name, x.Sku });
-            entity.HasOne<Category>().WithMany().HasForeignKey(x => x.CategoryId).OnDelete(DeleteBehavior.Restrict);
-            entity.HasOne<TaxCategory>().WithMany().HasForeignKey(x => x.TaxCategoryId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Category>().WithMany().HasForeignKey(x => new { x.TenantId, x.CategoryId }).HasPrincipalKey(x => new { x.TenantId, x.Id }).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<TaxCategory>().WithMany().HasForeignKey(x => new { x.TenantId, x.TaxCategoryId }).HasPrincipalKey(x => new { x.TenantId, x.Id }).OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<Customer>(entity =>
@@ -171,12 +173,14 @@ public sealed class CommerceDbContext : DbContext
             entity.Property(x => x.Phone).HasMaxLength(32);
             entity.Property(x => x.Email).HasMaxLength(240);
             entity.Property(x => x.Gstin).HasMaxLength(15);
+            entity.Property(x => x.StateCode).HasMaxLength(8);
             entity.Property(x => x.CreditLimit).HasPrecision(18, 2);
             entity.HasIndex(x => new { x.TenantId, x.Phone });
         });
 
         modelBuilder.Entity<Sale>(entity =>
         {
+            entity.Property(x => x.ReceiptJson).HasColumnType("jsonb");
             entity.Property(x => x.InvoiceNumber).HasMaxLength(80).IsRequired();
             entity.Property(x => x.Status).HasConversion<string>().HasMaxLength(32).IsRequired();
             entity.Property(x => x.Currency).HasMaxLength(3).IsRequired();
@@ -188,13 +192,14 @@ public sealed class CommerceDbContext : DbContext
             entity.HasIndex(x => new { x.TenantId, x.TerminalId, x.ClientGeneratedId }).IsUnique();
             entity.HasIndex(x => new { x.TenantId, x.LocationId, x.InvoiceNumber }).IsUnique();
             entity.HasIndex(x => new { x.TenantId, x.LocationId, x.CompletedAtUtc });
-            entity.HasOne<Location>().WithMany().HasForeignKey(x => x.LocationId).OnDelete(DeleteBehavior.Restrict);
-            entity.HasOne<Terminal>().WithMany().HasForeignKey(x => x.TerminalId).OnDelete(DeleteBehavior.Restrict);
-            entity.HasOne<Customer>().WithMany().HasForeignKey(x => x.CustomerId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Location>().WithMany().HasForeignKey(x => new { x.TenantId, x.LocationId }).HasPrincipalKey(x => new { x.TenantId, x.Id }).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Terminal>().WithMany().HasForeignKey(x => new { x.TenantId, x.TerminalId }).HasPrincipalKey(x => new { x.TenantId, x.Id }).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Customer>().WithMany().HasForeignKey(x => new { x.TenantId, x.CustomerId }).HasPrincipalKey(x => new { x.TenantId, x.Id }).OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<SaleLine>(entity =>
         {
+            entity.Property(x => x.HsnSacSnapshot).HasMaxLength(16);
             entity.Property(x => x.ProductNameSnapshot).HasMaxLength(240).IsRequired();
             entity.Property(x => x.SkuSnapshot).HasMaxLength(80).IsRequired();
             entity.Property(x => x.BarcodeSnapshot).HasMaxLength(80);
@@ -209,19 +214,22 @@ public sealed class CommerceDbContext : DbContext
             entity.Property(x => x.IgstAmount).HasPrecision(18, 2);
             entity.Property(x => x.LineTotal).HasPrecision(18, 2);
             entity.HasIndex(x => new { x.TenantId, x.SaleId });
-            entity.HasOne<Sale>().WithMany().HasForeignKey(x => x.SaleId).OnDelete(DeleteBehavior.Cascade);
-            entity.HasOne<Product>().WithMany().HasForeignKey(x => x.ProductId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Sale>().WithMany().HasForeignKey(x => new { x.TenantId, x.SaleId }).HasPrincipalKey(x => new { x.TenantId, x.Id }).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne<Product>().WithMany().HasForeignKey(x => new { x.TenantId, x.ProductId }).HasPrincipalKey(x => new { x.TenantId, x.Id }).OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<Payment>(entity =>
         {
             entity.Property(x => x.Method).HasConversion<string>().HasMaxLength(32).IsRequired();
             entity.Property(x => x.Amount).HasPrecision(18, 2);
+            entity.Property(x => x.AmountDue).HasPrecision(18, 2);
+            entity.Property(x => x.AmountTendered).HasPrecision(18, 2);
+            entity.Property(x => x.ChangeDue).HasPrecision(18, 2);
             entity.Property(x => x.Currency).HasMaxLength(3).IsRequired();
             entity.Property(x => x.Status).HasConversion<string>().HasMaxLength(32).IsRequired();
             entity.Property(x => x.Provider).HasMaxLength(80);
             entity.Property(x => x.Reference).HasMaxLength(160);
-            entity.HasOne<Sale>().WithMany().HasForeignKey(x => x.SaleId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne<Sale>().WithMany().HasForeignKey(x => new { x.TenantId, x.SaleId }).HasPrincipalKey(x => new { x.TenantId, x.Id }).OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<InventoryTransaction>(entity =>
@@ -232,9 +240,9 @@ public sealed class CommerceDbContext : DbContext
             entity.Property(x => x.SourceDocumentType).HasMaxLength(80);
             entity.HasIndex(x => new { x.TenantId, x.WarehouseId, x.ProductId });
             entity.HasIndex(x => new { x.TenantId, x.SourceDocumentType, x.SourceDocumentId });
-            entity.HasOne<Location>().WithMany().HasForeignKey(x => x.LocationId).OnDelete(DeleteBehavior.Restrict);
-            entity.HasOne<Warehouse>().WithMany().HasForeignKey(x => x.WarehouseId).OnDelete(DeleteBehavior.Restrict);
-            entity.HasOne<Product>().WithMany().HasForeignKey(x => x.ProductId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Location>().WithMany().HasForeignKey(x => new { x.TenantId, x.LocationId }).HasPrincipalKey(x => new { x.TenantId, x.Id }).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Warehouse>().WithMany().HasForeignKey(x => new { x.TenantId, x.WarehouseId }).HasPrincipalKey(x => new { x.TenantId, x.Id }).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Product>().WithMany().HasForeignKey(x => new { x.TenantId, x.ProductId }).HasPrincipalKey(x => new { x.TenantId, x.Id }).OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<AuditLog>(entity =>
@@ -261,18 +269,20 @@ public sealed class CommerceDbContext : DbContext
             entity.Property(x => x.Prefix).HasMaxLength(40).IsRequired();
             entity.Property(x => x.xmin).IsRowVersion();
             entity.HasIndex(x => new { x.TenantId, x.LocationId, x.FinancialPeriod, x.Prefix }).IsUnique();
-            entity.HasOne<Location>().WithMany().HasForeignKey(x => x.LocationId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Location>().WithMany().HasForeignKey(x => new { x.TenantId, x.LocationId }).HasPrincipalKey(x => new { x.TenantId, x.Id }).OnDelete(DeleteBehavior.Restrict);
         });
     }
 
     public override int SaveChanges()
     {
+        ValidateUserRoleTenants();
         TouchEntities();
         return base.SaveChanges();
     }
 
     public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
+        ValidateUserRoleTenants();
         TouchEntities();
         return base.SaveChangesAsync(cancellationToken);
     }
@@ -285,9 +295,21 @@ public sealed class CommerceDbContext : DbContext
             entity.ToTable(tableName);
             entity.HasKey(x => x.Id);
             entity.HasIndex(x => x.TenantId);
+            entity.HasAlternateKey(x => new { x.TenantId, x.Id });
             entity.Property(x => x.Version).IsConcurrencyToken();
             entity.HasOne<Tenant>().WithMany().HasForeignKey(x => x.TenantId).OnDelete(DeleteBehavior.Restrict);
         });
+    }
+
+    private void ValidateUserRoleTenants()
+    {
+        foreach (var entry in ChangeTracker.Entries<UserRole>().Where(e => e.State is EntityState.Added or EntityState.Modified).ToArray())
+        {
+            var user = Users.Find(entry.Entity.UserId);
+            var role = Roles.Find(entry.Entity.RoleId);
+            if (user is null || role is null || user.TenantId != role.TenantId)
+                throw new InvalidOperationException("A user and role must belong to the same tenant.");
+        }
     }
 
     private void TouchEntities()

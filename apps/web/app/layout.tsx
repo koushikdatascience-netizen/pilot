@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./styles.css";
 
 export const metadata: Metadata = {
-  title: "Universal Commerce OS",
-  description: "Retail POS foundation for Universal Commerce OS"
+  title: "Pilot POS",
+  description: "Retail POS core for Pilot POS"
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

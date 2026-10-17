@@ -1,239 +1,143 @@
 "use client";
 
-import { CreditCard, Minus, Plus, ReceiptText, Search, Trash2, UserRound, Wallet } from "lucide-react";
-import { FormEvent, useEffect, useMemo, useState } from "react";
-import { BootstrapResponse, CustomerResponse, ProductResponse, StockBalanceResponse, TaxCategoryResponse, createClient, login } from "../../lib/api";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { Search, PauseCircle, ReceiptText } from "lucide-react";
+import { BootstrapResponse, ProductResponse, SaleResponse, TaxCategoryResponse, TerminalContextResponse, createClient, login } from "../../lib/api";
 import { calculateCartTotals, formatMoney } from "../../lib/pos-calculations.mjs";
+import { Cart, CartLine, PaymentPanel, ReceiptView } from "../../components/checkout";
+import { CustomerSelector } from "../../components/customer-selector";
 
 type Client = ReturnType<typeof createClient>;
-type ProductTile = ProductResponse & { taxRate: number; taxBehavior: "Inclusive" | "Exclusive"; stock: number };
-type CartLine = ProductTile & { quantity: number; discount: number };
 
 export default function PosPage() {
   const [client, setClient] = useState<Client | null>(null);
-  const [bootstrap, setBootstrap] = useState<BootstrapResponse | null>(null);
+  const [context, setContext] = useState<BootstrapResponse | null>(null);
   const [products, setProducts] = useState<ProductResponse[]>([]);
-  const [taxCategories, setTaxCategories] = useState<TaxCategoryResponse[]>([]);
-  const [customers, setCustomers] = useState<CustomerResponse[]>([]);
-  const [balances, setBalances] = useState<StockBalanceResponse[]>([]);
-  const [query, setQuery] = useState("");
-  const [cart, setCart] = useState<CartLine[]>([]);
+  const [taxes, setTaxes] = useState<TaxCategoryResponse[]>([]);
+  const [terminals, setTerminals] = useState<TerminalContextResponse[]>([]);
   const [customerId, setCustomerId] = useState("");
-  const [paymentMethod, setPaymentMethod] = useState("Cash");
-  const [receipt, setReceipt] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  async function refresh(activeClient = client) {
-    if (!activeClient) return;
-    const [boot, productList, taxList, customerList, balanceList] = await Promise.all([
-      activeClient.bootstrap(),
-      activeClient.products(),
-      activeClient.taxCategories(),
-      activeClient.customers(),
-      activeClient.balances()
-    ]);
-    setBootstrap(boot);
-    setProducts(productList);
-    setTaxCategories(taxList);
-    setCustomers(customerList);
-    setBalances(balanceList);
-    setCustomerId(customerList.find((customer) => customer.isWalkIn)?.id ?? customerList[0]?.id ?? "");
-    setError(null);
-  }
+  const [cart, setCart] = useState<CartLine[]>([]);
+  const [held, setHeld] = useState<SaleResponse[]>([]);
+  const [activeHeld, setActiveHeld] = useState<SaleResponse | null>(null);
+  const [receipt, setReceipt] = useState<SaleResponse | null>(null);
+  const [query, setQuery] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const scanner = useRef<HTMLInputElement>(null);
+  const submitting = useRef(false);
+  const commandId = useRef("");
+  const savedHeld = useRef(false);
+  const [recovering, setRecovering] = useState(false);
+  const pending = useRef<{ hold: boolean; body: Record<string, unknown>; tender: { method: string; amount: number; amountTendered: number; reference: null }[] } | null>(null);
+  const [payments, setPayments] = useState([{ method: "Cash", amount: "", tendered: "" }]);
+  const totals = useMemo(() => calculateCartTotals(cart), [cart]);
+  const total = totals.grandTotal;
 
   useEffect(() => {
-    let mounted = true;
-    login()
-      .then((auth) => {
-        if (!mounted) return null;
-        const api = createClient(auth.accessToken);
-        setClient(api);
-        return refresh(api);
-      })
-      .catch((ex: unknown) => setError(ex instanceof Error ? ex.message : "Could not connect to API"));
-    return () => {
-      mounted = false;
-    };
+    let cancelled = false;
+    login().then(async auth => {
+      const api = createClient(auth.accessToken);
+      const [boot, items, taxList, people, holds, available] = await Promise.all([api.bootstrap(), api.products(), api.taxCategories(), api.customers(), api.sales("Held"), api.terminals()]);
+      if (cancelled) return;
+      const savedId = localStorage.getItem("pilot-terminal:" + auth.tenantId);
+      const selected = available.find(t => t.terminalId === savedId) ?? available[0];
+      setClient(api); setContext(selected ? { ...boot, ...selected } : null); setTerminals(available); setProducts(items); setTaxes(taxList); setHeld(holds);
+      setCustomerId(people.find(c => c.isWalkIn)?.id ?? "");
+    }).catch(e => setError(e.message));
+    return () => { cancelled = true; };
   }, []);
 
-  const taxById = useMemo(() => new Map(taxCategories.map((tax) => [tax.id, tax])), [taxCategories]);
-  const stockByProduct = useMemo(() => new Map(balances.map((balance) => [balance.productId, balance.quantityOnHand])), [balances]);
-  const productTiles = useMemo<ProductTile[]>(
-    () =>
-      products.map((product) => {
-        const tax = taxById.get(product.taxCategoryId);
-        return {
-          ...product,
-          barcode: product.barcode ?? "",
-          taxRate: tax?.rate ?? 0,
-          taxBehavior: tax?.taxBehavior ?? "Inclusive",
-          stock: stockByProduct.get(product.id) ?? 0
-        };
-      }),
-    [products, stockByProduct, taxById]
-  );
+  useEffect(() => {
+    if (!client) return;
+    let cancelled = false;
+    const timer = setTimeout(() => client.products(query).then(items => { if (!cancelled) setProducts(items); }).catch(e => { if (!cancelled) setError(e.message); }), 200);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [client, query]);
 
-  const visibleProducts = productTiles.filter((product) => {
-    const needle = query.trim().toLowerCase();
-    return !needle || product.name.toLowerCase().includes(needle) || product.sku.toLowerCase().includes(needle) || (product.barcode ?? "").includes(needle);
-  });
-
-  const totals = useMemo(() => calculateCartTotals(cart), [cart]);
-
-  function addProduct(product: ProductTile) {
-    setReceipt(null);
-    setError(null);
-    setCart((current) => {
-      const existing = current.find((line) => line.id === product.id);
-      if (existing) {
-        return current.map((line) => (line.id === product.id ? { ...line, quantity: line.quantity + 1 } : line));
-      }
-
-      return [...current, { ...product, quantity: 1, discount: 0 }];
+  function add(product: ProductResponse) {
+    if (busy || recovering) return;
+    const tax = taxes.find(t => t.id === product.taxCategoryId);
+    setCart(lines => {
+      const found = lines.find(l => l.id === product.id);
+      return found ? lines.map(l => l.id === product.id ? { ...l, quantity: l.quantity + 1 } : l)
+        : [...lines, { ...product, quantity: 1, discount: 0, taxRate: tax?.rate ?? 0, taxBehavior: tax?.taxBehavior ?? "Inclusive" }];
     });
+    setReceipt(null); setError(""); scanner.current?.focus();
   }
 
-  function submitSearch(event: FormEvent<HTMLFormElement>) {
+  async function scan(event: FormEvent) {
     event.preventDefault();
-    const exact = productTiles.find((product) => product.barcode === query.trim() || product.sku.toLowerCase() === query.trim().toLowerCase());
-    if (exact) {
-      addProduct(exact);
-      setQuery("");
-    }
-  }
-
-  function updateQuantity(id: string, delta: number) {
-    setCart((current) =>
-      current
-        .map((line) => (line.id === id ? { ...line, quantity: Math.max(1, line.quantity + delta) } : line))
-        .filter((line) => line.quantity > 0)
-    );
-  }
-
-  async function completeSale() {
-    if (!client || !bootstrap || cart.length === 0) return;
-    setError(null);
+    if (!client || !query.trim()) return;
     try {
-      const response = await client.completeSale({
-        locationId: bootstrap.locationId,
-        terminalId: bootstrap.terminalId,
-        customerId: customerId || null,
-        clientGeneratedId: crypto.randomUUID(),
-        lines: cart.map((line) => ({ productId: line.id, quantity: line.quantity, discountAmount: line.discount })),
-        payments: [{ method: paymentMethod, amount: totals.grandTotal, reference: "WEB-POS" }]
-      });
-      setReceipt(`${response.invoiceNumber} completed for ${formatMoney(response.grandTotal)}`);
-      setCart([]);
-      await refresh();
-    } catch (ex: unknown) {
-      setError(ex instanceof Error ? ex.message : "Sale failed");
-    }
+      const code = query.trim();
+      const product = await client.productByBarcode(code) ?? await client.productBySku(code);
+      if (product) { add(product); setQuery(""); }
+      else setError("No matching barcode or SKU.");
+    } catch (e) { setError(e instanceof Error ? e.message : "Search failed"); }
+    finally { scanner.current?.focus(); }
   }
 
-  return (
-    <main className="pos">
-      <section className="pos-left">
-        <header className="pos-header">
-          <div>
-            <p className="eyebrow">Retail POS</p>
-            <h1>Kalyani Main Store</h1>
-            {error ? <span className="sync-error">{error}</span> : <span className="sync-status">{client ? "API connected" : "Connecting to API..."}</span>}
-          </div>
-          <a className="secondary-link" href="/">Back office</a>
-        </header>
+  function clear() { setCart([]); setActiveHeld(null); commandId.current = ""; savedHeld.current = false; pending.current = null; setRecovering(false); setPayments([{ method: "Cash", amount: "", tendered: "" }]); }
 
-        <form className="scan-box" onSubmit={submitSearch}>
-          <Search size={20} />
-          <input
-            autoFocus
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Scan barcode or search product"
-            aria-label="Scan barcode or search product"
-          />
-        </form>
+  async function submit(hold: boolean) {
+    if (!client || !context || submitting.current || cart.length === 0) return;
+    submitting.current = true; setBusy(true); setError("");
+    commandId.current ||= crypto.randomUUID();
+    hold = pending.current?.hold ?? hold;
+    try {
+      const body = pending.current?.body ?? { locationId: context.locationId, terminalId: context.terminalId, customerId: customerId || null, clientGeneratedId: activeHeld?.clientGeneratedId ?? commandId.current,
+        lines: cart.map(l => ({ productId: l.id, quantity: l.quantity, discountAmount: l.discount })) };
+      const tender = pending.current?.tender ?? payments.map(p => ({ method: p.method, amount: Number(p.amount || total), amountTendered: Number(p.tendered || p.amount || total), reference: null }));
+      pending.current = { hold, body, tender };
+      if (!hold && activeHeld && !savedHeld.current) { await client.updateHeldSale(activeHeld.id, body); savedHeld.current = true; }
+      const result = hold ? activeHeld ? await client.updateHeldSale(activeHeld.id, body) : await client.holdSale(body) : activeHeld
+        ? await client.completeHeldSale(activeHeld.id, { payments: tender })
+        : await client.completeSale({ ...body, payments: tender });
+      clear();
+      if (!hold) setReceipt(result);
+      try { setHeld(await client.sales("Held")); } catch { setError("Sale saved. Refresh to update held carts."); }
+    } catch (e) {
+      if (e instanceof Error && "status" in e && Number(e.status) < 500) { pending.current = null; setRecovering(false); savedHeld.current = false; }
+      else setRecovering(true);
+      setError(e instanceof Error ? e.message : "Checkout failed");
+    }
+    finally { submitting.current = false; setBusy(false); scanner.current?.focus(); }
+  }
 
-        <div className="quick-grid">
-          {visibleProducts.map((product) => (
-            <button className="product-tile" key={product.id} onClick={() => addProduct(product)} disabled={!client || product.stock <= 0}>
-              <span>{product.name}</span>
-              <small>{product.sku} - {product.stock} on hand</small>
-              <strong>{formatMoney(product.price)}</strong>
-            </button>
-          ))}
-        </div>
-      </section>
+  function resume(sale: SaleResponse) {
+    if (cart.length) { setError("Hold or clear the current cart first."); return; }
+    setActiveHeld(sale); setCustomerId(sale.customerId ?? ""); setReceipt(null);
+    const terminal = terminals.find(t => t.terminalId === sale.terminalId);
+    if (context && terminal) setContext({ ...context, ...terminal });
+    setCart(sale.lines.map(l => ({
+      id: l.productId, name: l.productName, sku: l.sku, barcode: l.barcode, price: l.unitPrice,
+      categoryId: "", taxCategoryId: "", hsnSac: null, unitOfMeasure: "", currency: sale.currency, isStockTracked: true, isActive: true,
+      quantity: l.quantity, discount: l.discountAmount, taxRate: l.taxRate, taxBehavior: l.lineTotal > l.unitPrice * l.quantity - l.discountAmount ? "Exclusive" : "Inclusive"
+    })));
+  }
 
-      <aside className="cart-panel">
-        <div className="panel-title">
-          <h2>Current Cart</h2>
-          <UserRound size={18} />
-        </div>
-
-        <select className="customer-select" value={customerId} onChange={(event) => setCustomerId(event.target.value)}>
-          {customers.map((customer) => <option key={customer.id} value={customer.id}>{customer.displayName}</option>)}
-        </select>
-
-        <div className="cart-lines">
-          {cart.length === 0 ? (
-            <div className="empty-state">Ready for scanning</div>
-          ) : (
-            cart.map((line) => (
-              <div className="cart-line" key={line.id}>
-                <div>
-                  <strong>{line.name}</strong>
-                  <span>{line.sku}</span>
-                </div>
-                <div className="qty-stepper">
-                  <button onClick={() => updateQuantity(line.id, -1)} aria-label={`Decrease ${line.name}`} title="Decrease quantity">
-                    <Minus size={16} />
-                  </button>
-                  <span>{line.quantity}</span>
-                  <button onClick={() => updateQuantity(line.id, 1)} aria-label={`Increase ${line.name}`} title="Increase quantity">
-                    <Plus size={16} />
-                  </button>
-                </div>
-                <span>{formatMoney(line.price * line.quantity - line.discount)}</span>
-                <button className="ghost-danger" onClick={() => setCart((current) => current.filter((item) => item.id !== line.id))} aria-label={`Remove ${line.name}`} title="Remove item">
-                  <Trash2 size={16} />
-                </button>
-              </div>
-            ))
-          )}
-        </div>
-
-        <div className="summary">
-          <Row label="Subtotal" value={formatMoney(totals.subtotal)} />
-          <Row label="Discount" value={formatMoney(totals.discountTotal)} />
-          <Row label="GST estimate" value={formatMoney(totals.taxTotal)} />
-          <Row label="Server tender" value={formatMoney(totals.grandTotal)} strong />
-        </div>
-
-        <div className="tenders">
-          {["Cash", "Upi", "Card"].map((method) => (
-            <button className={paymentMethod === method ? "selected" : ""} key={method} onClick={() => setPaymentMethod(method)}>
-              {method === "Card" ? <CreditCard size={18} /> : <Wallet size={18} />}
-              {method}
-            </button>
-          ))}
-        </div>
-
-        <button className="complete-sale" onClick={completeSale} disabled={!client || !bootstrap || cart.length === 0}>
-          <ReceiptText size={20} />
-          Complete {paymentMethod} Sale
-        </button>
-
-        {receipt ? <div className="receipt">Receipt {receipt}</div> : null}
-      </aside>
-    </main>
-  );
-}
-
-function Row({ label, value, strong = false }: { label: string; value: string; strong?: boolean }) {
-  return (
-    <div className={strong ? "summary-row total" : "summary-row"}>
-      <span>{label}</span>
-      <strong>{value}</strong>
-    </div>
-  );
+  return <main className="pos">
+    <section className="pos-left">
+      <header className="pos-header"><div><p className="eyebrow">Pilot POS</p><h1>Retail Checkout</h1><span className="sync-status">{context ? context.tenantName : "Connecting..."}</span></div><a className="secondary-link" href="/">Back office</a></header>
+      <label>Terminal<select className="customer-select" aria-label="Terminal" value={context?.terminalId ?? ""} disabled={busy || cart.length > 0} onChange={e => {
+        const terminal = terminals.find(t => t.terminalId === e.target.value);
+        if (terminal && context) { setContext({ ...context, ...terminal }); localStorage.setItem("pilot-terminal:" + terminal.tenantId, terminal.terminalId); }
+      }}>{terminals.map(t => <option key={t.terminalId} value={t.terminalId}>{t.locationName} / {t.terminalName}</option>)}</select></label>
+      {error && <p role="alert" className="sync-error">{error}</p>}
+      <form className="scan-box" onSubmit={scan}><Search size={20}/><input ref={scanner} autoFocus value={query} onChange={e => setQuery(e.target.value)} aria-label="Scan barcode or search product" placeholder="Scan barcode or search product" disabled={busy}/></form>
+      <div className="quick-grid">{products.map(p => <button className="product-tile" key={p.id} disabled={busy || recovering} onClick={() => add(p)}><span>{p.name}</span><small>{p.sku}</small><strong>{formatMoney(p.price)}</strong></button>)}</div>
+      {products.length === 0 && <p className="empty-state">No matching products</p>}
+      <section className="held-sales"><h2>Held Sales</h2>{held.length === 0 ? <span className="muted">No held carts</span> : held.map(s => <div className="mini-sale" key={s.id}><span>{s.invoiceNumber}</span><strong>{formatMoney(s.grandTotal)}</strong><button disabled={busy} onClick={() => resume(s)}>Resume</button></div>)}</section>
+    </section>
+    <aside className="cart-panel">
+      <h2>{activeHeld ? "Resumed Sale" : "Current Cart"}</h2>
+      <CustomerSelector client={client} value={customerId} disabled={busy || recovering} onChange={setCustomerId}/>
+      <Cart lines={cart} disabled={busy || recovering} onChange={setCart}/>
+      <div className="summary"><div className="summary-row"><span>GST estimate</span><strong>{formatMoney(activeHeld?.taxTotal ?? totals.taxTotal)}</strong></div><div className="summary-row total"><span>Total</span><strong>{formatMoney(total)}</strong></div></div>
+      <PaymentPanel payments={payments} onChange={setPayments} total={total} disabled={busy || recovering}/>
+      <button className="complete-sale" disabled={busy || !client || cart.length === 0} onClick={() => submit(false)}><ReceiptText size={20}/>{busy ? "Processing..." : "Complete Sale"}</button>
+      <div className="cart-actions"><button disabled={busy || recovering || cart.length === 0} onClick={() => submit(true)}><PauseCircle size={18}/>Hold</button><button disabled={busy || recovering} onClick={clear}>Clear</button></div>
+      {receipt && <ReceiptView sale={receipt}/>}
+    </aside>
+  </main>;
 }

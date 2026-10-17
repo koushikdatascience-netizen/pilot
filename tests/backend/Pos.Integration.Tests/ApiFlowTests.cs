@@ -39,8 +39,8 @@ public sealed class ApiFlowTests
         var bootstrap = await client.GetFromJsonAsync<BootstrapResponse>("/api/v1/tenancy/bootstrap");
         Assert.NotNull(bootstrap);
 
-        var products = await client.GetFromJsonAsync<ProductResponse[]>("/api/v1/products");
-        var milk = Assert.Single(products!, p => p.Sku == "MILK-1L");
+        var products = await client.GetFromJsonAsync<PagedResponse<ProductResponse>>("/api/v1/products");
+        var milk = Assert.Single(products!.Items, p => p.Sku == "MILK-1L");
 
         var createdProductResponse = await client.PostAsJsonAsync("/api/v1/products", new CreateProductRequest(
             milk.CategoryId,
@@ -55,7 +55,7 @@ public sealed class ApiFlowTests
             true));
         Assert.Equal(HttpStatusCode.Created, createdProductResponse.StatusCode);
 
-        var customerResponse = await client.PostAsJsonAsync("/api/v1/customers", new CreateCustomerRequest("Test Customer", "+919999999999", "test@example.test", null, 0));
+        var customerResponse = await client.PostAsJsonAsync("/api/v1/customers", new CreateCustomerRequest("Test Customer", "+919999999999", "test@example.test", null, "19", 0));
         Assert.Equal(HttpStatusCode.Created, customerResponse.StatusCode);
         var customer = await customerResponse.Content.ReadFromJsonAsync<CustomerResponse>();
 
@@ -72,7 +72,7 @@ public sealed class ApiFlowTests
             customer!.Id,
             clientGeneratedId,
             [new CompleteSaleLineRequest(milk.Id, 2, 6)],
-            [new CompleteSalePaymentRequest(PaymentMethod.Cash, 130, "TEST")]);
+            [new CompleteSalePaymentRequest(PaymentMethod.Cash, 130, 150, "TEST")]);
 
         var saleResponse = await client.PostAsJsonAsync("/api/v1/sales/complete", saleRequest);
         Assert.Equal(HttpStatusCode.Created, saleResponse.StatusCode);
@@ -111,8 +111,8 @@ public sealed class ApiFlowTests
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", await LoginAsync(client));
 
         var bootstrap = await client.GetFromJsonAsync<BootstrapResponse>("/api/v1/tenancy/bootstrap");
-        var products = await client.GetFromJsonAsync<ProductResponse[]>("/api/v1/products");
-        var milk = products!.Single(p => p.Sku == "MILK-1L");
+        var products = await client.GetFromJsonAsync<PagedResponse<ProductResponse>>("/api/v1/products");
+        var milk = products!.Items.Single(p => p.Sku == "MILK-1L");
 
         var invalidLocationSale = new CompleteSaleRequest(
             Guid.NewGuid(),
@@ -120,7 +120,7 @@ public sealed class ApiFlowTests
             null,
             Guid.NewGuid(),
             [new CompleteSaleLineRequest(milk.Id, 1, 0)],
-            [new CompleteSalePaymentRequest(PaymentMethod.Cash, 68, null)]);
+            [new CompleteSalePaymentRequest(PaymentMethod.Cash, 68, 68, null)]);
         var invalidResponse = await client.PostAsJsonAsync("/api/v1/sales/complete", invalidLocationSale);
         Assert.Equal(HttpStatusCode.NotFound, invalidResponse.StatusCode);
 
@@ -130,7 +130,7 @@ public sealed class ApiFlowTests
             null,
             Guid.NewGuid(),
             [new CompleteSaleLineRequest(milk.Id, 1000, 0)],
-            [new CompleteSalePaymentRequest(PaymentMethod.Cash, 68000, null)]);
+            [new CompleteSalePaymentRequest(PaymentMethod.Cash, 68000, 68000, null)]);
         var oversellResponse = await client.PostAsJsonAsync("/api/v1/sales/complete", oversell);
         Assert.Equal(HttpStatusCode.Conflict, oversellResponse.StatusCode);
 
@@ -149,6 +149,7 @@ public sealed class ApiFlowTests
     }
 
     private sealed record TestLoginResponse(string AccessToken);
+    private sealed record PagedResponse<T>(IReadOnlyList<T> Items, int Page, int PageSize, int TotalCount);
 }
 
 public sealed class TestAppFactory : WebApplicationFactory<Program>

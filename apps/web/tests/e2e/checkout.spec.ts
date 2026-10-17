@@ -1,0 +1,50 @@
+import { expect, test } from "@playwright/test";
+
+test("cash checkout persists invoice, history and stock deduction", async ({ page, request }) => {
+  const auth = await request.post("http://localhost:5088/api/v1/auth/login", { data: { email: "admin@example.test", password: "ChangeMe123!" } });
+  expect(auth.ok()).toBeTruthy();
+  const { accessToken } = await auth.json();
+  const headers = { Authorization: `Bearer ${accessToken}` };
+  const boot = await (await request.get("http://localhost:5088/api/v1/tenancy/bootstrap", { headers })).json();
+  const products = await (await request.get("http://localhost:5088/api/v1/products?sku=MILK-1L", { headers })).json();
+  const milk = products.items[0];
+  await request.post("http://localhost:5088/api/v1/inventory/opening-stock", { headers, data: { locationId: boot.locationId, warehouseId: boot.warehouseId, productId: milk.id, quantity: 3, unitCost: 40 } });
+  const balances = await (await request.get("http://localhost:5088/api/v1/inventory/balances", { headers })).json();
+  const before = balances.find((b: { productId: string; warehouseId: string }) => b.productId === milk.id && b.warehouseId === boot.warehouseId).quantityOnHand;
+  await page.goto("/login");
+  await page.getByLabel("Email", { exact: true }).fill("admin@example.test");
+  await page.getByLabel("Password", { exact: true }).fill("ChangeMe123!");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(page).toHaveURL(/\/pos$/);
+  const scan = page.getByRole("textbox", { name: "Scan barcode or search product" });
+  await expect(page.getByRole("button", { name: /Milk/ }).first()).toBeEnabled();
+  await scan.fill(milk.barcode || milk.sku);
+  await scan.press("Enter");
+  await page.getByRole("button", { name: "Increase Milk 1L", exact: true }).click();
+  await page.getByLabel("Customer", { exact: true }).selectOption({ label: "Walk-in" });
+  await page.getByRole("spinbutton", { name: "Tendered 1", exact: true }).fill("200");
+  await page.getByRole("button", { name: "Complete Sale", exact: true }).click();
+  const receipt = page.getByRole("region", { name: "Receipt", exact: true });
+  await expect(receipt).toBeVisible();
+  const invoice = (await receipt.innerText()).match(/KAL-01-\d{6}-\d+/)?.[0];
+  expect(invoice).toBeTruthy();
+  await page.screenshot({ path: "test-results/checkout-desktop.png", fullPage: true });
+  await page.getByLabel("Receipt paper width").selectOption("58");
+  await page.pdf({ path: "test-results/receipt-58mm.pdf", preferCSSPageSize: true });
+  await page.getByLabel("Receipt paper width").selectOption("80");
+  await page.pdf({ path: "test-results/receipt-80mm.pdf", preferCSSPageSize: true });
+  await page.getByRole("link", { name: "Back office" }).click();
+  await expect(page.getByText(invoice!, { exact: true })).toBeVisible();
+  const after = await (await request.get("http://localhost:5088/api/v1/inventory/balances", { headers })).json();
+  expect(after.find((b: { productId: string; warehouseId: string }) => b.productId === milk.id && b.warehouseId === boot.warehouseId).quantityOnHand).toBe(before - 2);
+  await page.setViewportSize({ width: 768, height: 1024 });
+  await page.goto("/pos");
+  await expect(scan).toBeVisible();
+  await page.screenshot({ path: "test-results/checkout-tablet.png", fullPage: true });
+  for (const width of [1920, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    await expect(scan).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy();
+    await page.screenshot({ path: `test-results/checkout-${width}.png`, fullPage: true });
+  }
+});

@@ -12,6 +12,13 @@ public interface ITaxCalculator
 
 public sealed class IndiaGstTaxCalculator : ITaxCalculator
 {
+    public static bool IsIntraState(string sellerState, string? customerState, string? gstin)
+    {
+        var state = !string.IsNullOrWhiteSpace(customerState) ? customerState.Trim()
+            : !string.IsNullOrWhiteSpace(gstin) && gstin.Length >= 2 ? gstin[..2] : sellerState;
+        return string.Equals(state, sellerState, StringComparison.OrdinalIgnoreCase);
+    }
+
     public TaxBreakdown Calculate(decimal lineAmountAfterDiscount, decimal taxRate, TaxBehavior behavior, bool intraState)
     {
         if (lineAmountAfterDiscount < 0) throw new ArgumentOutOfRangeException(nameof(lineAmountAfterDiscount));
@@ -38,7 +45,7 @@ public sealed class IndiaGstTaxCalculator : ITaxCalculator
 }
 
 public sealed record SaleLineInput(Guid ProductId, string ProductName, string Sku, string? Barcode, decimal Quantity, decimal UnitPrice, decimal DiscountAmount, decimal TaxRate, TaxBehavior TaxBehavior);
-public sealed record SalePaymentInput(PaymentMethod Method, decimal Amount, string? Reference);
+public sealed record SalePaymentInput(PaymentMethod Method, decimal Amount, decimal? AmountTendered, string? Reference);
 public sealed record SaleTotals(decimal Subtotal, decimal DiscountTotal, decimal TaxTotal, decimal GrandTotal);
 
 public sealed class SaleCalculator
@@ -111,6 +118,22 @@ public sealed class SaleCalculator
         if (Money.Round(captured) != Money.Round(grandTotal))
         {
             throw new InvalidOperationException($"Payments must equal grand total. Expected {grandTotal}, received {captured}.");
+        }
+
+        foreach (var payment in payments)
+        {
+            if (payment.Amount <= 0) throw new InvalidOperationException("Payment amount must be greater than zero.");
+
+            var tendered = payment.AmountTendered ?? payment.Amount;
+            if (tendered < 0) throw new InvalidOperationException("Amount tendered cannot be negative.");
+            if (payment.Method == PaymentMethod.Cash)
+            {
+                if (tendered < payment.Amount) throw new InvalidOperationException("Cash tendered cannot be less than cash amount due.");
+            }
+            else if (Money.Round(tendered) != Money.Round(payment.Amount))
+            {
+                throw new InvalidOperationException("Non-cash payments cannot create change.");
+            }
         }
     }
 }
