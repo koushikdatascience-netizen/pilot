@@ -15,6 +15,8 @@ using Pos.Application.Inventory;
 using Pos.Application.Reporting;
 using Pos.Application.Sales;
 using Pos.Application.Tenancy;
+using Pos.Application.Sync;
+using Pos.Sync.Contracts;
 using Pos.Domain.Catalog;
 using Pos.Domain.Identity;
 using Pos.Domain.Sales;
@@ -61,6 +63,9 @@ builder.Services.AddScoped<InventoryService>();
 builder.Services.AddScoped<CompleteSaleService>();
 builder.Services.AddScoped<ReportingService>();
 builder.Services.AddScoped<TenancyService>();
+builder.Services.AddScoped<SyncService>();
+builder.Services.AddScoped<OutboxPublisher>();
+if (!builder.Environment.IsEnvironment("Testing")) builder.Services.AddHostedService<Pos.Api.OutboxWorker>();
 builder.Services.AddScoped<DevelopmentSeeder>();
 builder.Services.AddScoped<ICurrentUserAccessor, HttpCurrentUserAccessor>();
 builder.Services.AddScoped<ITenantContext, TenantContext>();
@@ -168,6 +173,13 @@ api.MapPost("/auth/login", async (AuthService auth, LoginRequest request, Cancel
     Results.Ok(await auth.LoginAsync(request, cancellationToken))).AllowAnonymous().RequireRateLimiting("login");
 
 var protectedApi = api.MapGroup("").RequireAuthorization();
+protectedApi.MapPost("/sync/devices", [Authorize(Policy = nameof(Permission.ManageSettings))] async (SyncService service, RegisterDeviceRequest request, CancellationToken ct) =>
+    Results.Ok(await service.RegisterAsync(request, ct)));
+var sync = protectedApi.MapGroup("/sync/devices/{deviceId:guid}").RequireAuthorization(nameof(Permission.CompleteSale));
+sync.MapGet("/snapshot", async (SyncService service, Guid deviceId, CancellationToken ct) => Results.Ok(await service.SnapshotAsync(deviceId, ct)));
+sync.MapGet("/changes", async (SyncService service, Guid deviceId, long? after, int? limit, CancellationToken ct) => Results.Ok(await service.ChangesAsync(deviceId, after ?? 0, limit ?? 100, ct)));
+sync.MapPost("/ack", async (SyncService service, Guid deviceId, AcknowledgeRequest request, CancellationToken ct) => Results.Ok(await service.AcknowledgeAsync(deviceId, request, ct)));
+sync.MapPost("/sales", async (SyncService service, Guid deviceId, CompleteSaleRequest request, CancellationToken ct) => Results.Ok(await service.UploadAsync(deviceId, request, ct)));
 protectedApi.MapGet("/tenancy/bootstrap", async (TenancyService service, CancellationToken cancellationToken) => Results.Ok(await service.BootstrapAsync(cancellationToken)));
 protectedApi.MapGet("/tenancy/terminals", async (TenancyService service, CancellationToken cancellationToken) => Results.Ok(await service.TerminalsAsync(cancellationToken)));
 

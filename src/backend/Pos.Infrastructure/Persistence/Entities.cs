@@ -229,3 +229,21 @@ public sealed class InvoiceSequence
     public DateTimeOffset UpdatedAtUtc { get; set; } = DateTimeOffset.UtcNow;
     public uint xmin { get; set; }
 }
+
+public sealed class TerminalDevice : TenantEntity
+{
+    public Guid TerminalId { get; set; }
+    public Guid DeviceId { get; set; }
+    public long AcknowledgedSequence { get; set; }
+    public long OfferedSequence { get; set; }
+    public DateTimeOffset LastSeenAtUtc { get; set; }
+}
+
+public sealed class SyncChange : TenantEntity
+{
+    public long Sequence { get; set; }
+    public Guid EventId { get; set; }
+    public int SchemaVersion { get; set; } = 1;
+    public string EventType { get; set; } = "";
+    public string PayloadJson { get; set; } = "";
+}

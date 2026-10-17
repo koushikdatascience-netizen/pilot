@@ -28,6 +28,8 @@ public sealed class CommerceDbContext : DbContext
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
     public DbSet<OutboxEvent> OutboxEvents => Set<OutboxEvent>();
     public DbSet<InvoiceSequence> InvoiceSequences => Set<InvoiceSequence>();
+    public DbSet<TerminalDevice> TerminalDevices => Set<TerminalDevice>();
+    public DbSet<SyncChange> SyncChanges => Set<SyncChange>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -50,6 +52,26 @@ public sealed class CommerceDbContext : DbContext
         ConfigureTenantEntity<InventoryTransaction>(modelBuilder, "inventory_transactions");
         ConfigureTenantEntity<AuditLog>(modelBuilder, "audit_logs");
         ConfigureTenantEntity<OutboxEvent>(modelBuilder, "outbox_events");
+        ConfigureTenantEntity<TerminalDevice>(modelBuilder, "terminal_devices");
+        ConfigureTenantEntity<SyncChange>(modelBuilder, "sync_changes");
+
+        modelBuilder.Entity<TerminalDevice>(entity =>
+        {
+            entity.HasIndex(x => new { x.TenantId, x.DeviceId }).IsUnique();
+            entity.HasIndex(x => new { x.TenantId, x.TerminalId }).IsUnique();
+            entity.HasOne<Terminal>().WithMany().HasForeignKey(x => new { x.TenantId, x.TerminalId })
+                .HasPrincipalKey(x => new { x.TenantId, x.Id }).OnDelete(DeleteBehavior.Restrict);
+        });
+        modelBuilder.Entity<SyncChange>(entity =>
+        {
+            entity.Property(x => x.Sequence).UseIdentityByDefaultColumn();
+            entity.Property(x => x.EventType).HasMaxLength(160);
+            entity.Property(x => x.PayloadJson).HasColumnType("jsonb");
+            entity.HasIndex(x => new { x.TenantId, x.Sequence }).IsUnique();
+            entity.HasIndex(x => new { x.TenantId, x.EventId }).IsUnique();
+            entity.HasOne<OutboxEvent>().WithMany().HasForeignKey(x => new { x.TenantId, x.EventId })
+                .HasPrincipalKey(x => new { x.TenantId, x.Id }).OnDelete(DeleteBehavior.Restrict);
+        });
 
         modelBuilder.Entity<Tenant>(entity =>
         {

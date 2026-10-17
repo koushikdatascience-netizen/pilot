@@ -12,5 +12,6 @@
   <ItemGroup>
     <ProjectReference Include="..\Pos.Domain\Pos.Domain.csproj" />
     <ProjectReference Include="..\Pos.Infrastructure\Pos.Infrastructure.csproj" />
+    <ProjectReference Include="..\Pos.Sync.Contracts\Pos.Sync.Contracts.csproj" />
   </ItemGroup>
 </Project>

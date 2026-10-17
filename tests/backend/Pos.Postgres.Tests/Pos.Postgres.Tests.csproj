@@ -24,5 +24,6 @@
     <ProjectReference Include="..\..\..\src\backend\Pos.Api\Pos.Api.csproj" />
     <ProjectReference Include="..\..\..\src\backend\Pos.Application\Pos.Application.csproj" />
     <ProjectReference Include="..\..\..\src\backend\Pos.Infrastructure\Pos.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\..\apps\edge\Pos.Edge\Pos.Edge.csproj" />
   </ItemGroup>
 </Project>

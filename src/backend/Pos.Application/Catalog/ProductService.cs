@@ -181,12 +181,16 @@ public sealed class ProductService
         AfterJson = JsonSerializer.Serialize(after)
     };
 
-    private OutboxEvent Outbox(string eventType, object payload) => new()
+    private OutboxEvent Outbox(string eventType, object payload)
     {
-        Id = Guid.NewGuid(),
-        TenantId = _tenant.TenantId,
-        EventType = eventType,
-        PayloadJson = JsonSerializer.Serialize(payload),
-        OccurredAtUtc = DateTimeOffset.UtcNow
-    };
+        _db.ChangeTracker.DetectChanges();
+        var json = JsonSerializer.SerializeToNode(payload)!;
+        if (payload is Product product && _db.Entry(product).State == EntityState.Modified)
+            json["Version"] = product.Version + 1;
+        return new OutboxEvent
+        {
+            Id = Guid.NewGuid(), TenantId = _tenant.TenantId, EventType = eventType,
+            PayloadJson = json.ToJsonString(), OccurredAtUtc = DateTimeOffset.UtcNow
+        };
+    }
 }

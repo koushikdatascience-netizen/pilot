@@ -480,8 +480,6 @@ namespace Pos.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasAlternateKey("TenantId", "Id");
-
                     b.HasIndex("TenantId");
 
                     b.HasIndex("ProcessedAtUtc", "OccurredAtUtc");
@@ -882,6 +880,61 @@ namespace Pos.Infrastructure.Persistence.Migrations
                     b.ToTable("sale_lines", (string)null);
                 });
 
+            modelBuilder.Entity("Pos.Infrastructure.Persistence.SyncChange", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("EventId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("EventType")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)");
+
+                    b.Property<string>("PayloadJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<int>("SchemaVersion")
+                        .HasColumnType("integer");
+
+                    b.Property<long>("Sequence")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Sequence"));
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.HasAlternateKey("TenantId", "Id");
+
+                    b.HasIndex("TenantId");
+
+                    b.HasIndex("TenantId", "EventId")
+                        .IsUnique();
+
+                    b.HasIndex("TenantId", "Sequence")
+                        .IsUnique();
+
+                    b.ToTable("sync_changes", (string)null);
+                });
+
             modelBuilder.Entity("Pos.Infrastructure.Persistence.TaxCategory", b =>
                 {
                     b.Property<Guid>("Id")
@@ -998,6 +1051,55 @@ namespace Pos.Infrastructure.Persistence.Migrations
                     b.HasIndex("TenantId", "LocationId");
 
                     b.ToTable("terminals", (string)null);
+                });
+
+            modelBuilder.Entity("Pos.Infrastructure.Persistence.TerminalDevice", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<long>("AcknowledgedSequence")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("DeviceId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("LastSeenAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<long>("OfferedSequence")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("TerminalId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.HasAlternateKey("TenantId", "Id");
+
+                    b.HasIndex("TenantId");
+
+                    b.HasIndex("TenantId", "DeviceId")
+                        .IsUnique();
+
+                    b.HasIndex("TenantId", "TerminalId")
+                        .IsUnique();
+
+                    b.ToTable("terminal_devices", (string)null);
                 });
 
             modelBuilder.Entity("Pos.Infrastructure.Persistence.User", b =>
@@ -1347,6 +1449,22 @@ namespace Pos.Infrastructure.Persistence.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("Pos.Infrastructure.Persistence.SyncChange", b =>
+                {
+                    b.HasOne("Pos.Infrastructure.Persistence.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Pos.Infrastructure.Persistence.OutboxEvent", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "EventId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Pos.Infrastructure.Persistence.TaxCategory", b =>
                 {
                     b.HasOne("Pos.Infrastructure.Persistence.Tenant", null)
@@ -1367,6 +1485,22 @@ namespace Pos.Infrastructure.Persistence.Migrations
                     b.HasOne("Pos.Infrastructure.Persistence.Location", null)
                         .WithMany()
                         .HasForeignKey("TenantId", "LocationId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Pos.Infrastructure.Persistence.TerminalDevice", b =>
+                {
+                    b.HasOne("Pos.Infrastructure.Persistence.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Pos.Infrastructure.Persistence.Terminal", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "TerminalId")
                         .HasPrincipalKey("TenantId", "Id")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();

@@ -14,4 +14,6 @@ The source research identifies offline resilience as a major competitive require
 
 ## Consequences
 
-Phase 1 includes terminal identity, client-generated IDs, sync status, immutable sale snapshots, and outbox events. The full SQLite sync engine is deferred.
+Phase 1 includes terminal identity, client-generated IDs, sync status, immutable sale snapshots, and outbox events. Milestone 3 adds a SQLite preparation runtime with catalog bootstrap, versioned change pages, atomic local checkpoints, durable command queue, lease recovery, and server-authoritative upload. The API publishes transactional outbox events into a PostgreSQL feed; device acknowledgement is separate from publication.
+
+The browser POS is not yet wired to the local runtime. Offline invoicing, local stock authority, device-specific credentials, encrypted storage, native packaging, conflict-resolution UI, and feed retention/compaction remain deferred. See `docs/MILESTONE_3.md` for the bounded preparation scope.

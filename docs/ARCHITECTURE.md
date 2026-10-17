@@ -92,7 +92,13 @@ The product is offline-first by design. Milestone 1.5 keeps the future edge path
 - Transactional outbox events.
 - Hardware-neutral POS UI and barcode keyboard-wedge flow.
 
-Full local SQLite sync remains a later milestone. Completed sales are immutable; corrections should be represented as returns, voids, or adjustment operations.
+Milestone 3 adds `Pos.Sync.Contracts` and `apps/edge/Pos.Edge`, a .NET SQLite demonstrator. Registration binds a permanent local UUID to one active tenant-owned terminal. ManageSettings authorizes registration; CompleteSale authorizes snapshot/feed/ack/upload. Existing tenant membership and bearer policies still apply; device identity is not a separate authentication credential.
+
+The background worker publishes bounded outbox batches into `sync_changes`, atomically marking publication. A per-tenant PostgreSQL advisory lock serializes publishers so committed sequence cursors cannot skip another publisher's uncommitted events. Device acknowledgements are separate, monotonic and bounded by delivered checkpoints. Bootstrap reads catalog and feed cursor from one repeatable-read snapshot. Product versions prevent older delayed events from overwriting newer bootstrap values.
+
+SQLite stores the binding, catalog, inbox, checkpoint and immutable sale-command queue. Cache changes and cursor commit together before acknowledgement. Uploads lease a command for two minutes and retain its UUID/payload across retries and restarts. The original complete-sale service remains authoritative, including idempotency, permissions, pricing, GST, stock and invoice allocation. Permanent validation/stock/permission failures are retained as conflicts; there is no automatic financial merge.
+
+Browser integration, offline invoices, encrypted local storage, device credentials, replacement/revocation, feed retention, and conflict-resolution UI remain later work. Customer profiles are not cached; non-catalog events retain only inbox metadata locally. Completed sales are immutable; corrections should be represented as returns, voids, or adjustment operations.
 
 ## Tax Strategy
 

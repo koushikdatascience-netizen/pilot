@@ -161,3 +161,14 @@ OutboxEvent:
 - Tenant/Id alternate keys and composite foreign keys across tenant-owned relationships.
 - Held/Draft sales use the same aggregate; their temporary numbers are replaced by real invoices on completion.
 - Upgrade migration backfills legacy payment amounts and initial discount settings without inventing missing historical receipt details.
+
+## Milestone 3 Additions
+
+- TerminalDevice: tenant-owned Id, TerminalId, DeviceId, OfferedSequence, AcknowledgedSequence, LastSeenAtUtc and standard timestamps/version. Unique tenant/device and tenant/terminal pairs prevent silent rebinding. Composite tenant/terminal FK prevents cross-tenant references.
+- SyncChange: tenant-owned Id, identity Sequence, EventId, SchemaVersion, EventType and JSON payload. Tenant/sequence and tenant/event are unique; a composite FK references the original outbox event. Sequence gaps are valid. Rows are durable feed records, not an event-sourced business ledger.
+- Outbox ProcessedAtUtc means successfully published to the durable feed, not acknowledged by every device. Attempts counts successful publication attempts; failed transactions roll back both publication and this counter.
+- SQLite metadata: permanent device UUID, immutable tenant/terminal/server binding and committed cursor.
+- SQLite products/taxes: version-aware product JSON and bootstrap tax JSON. No stock authority or customer-profile cache.
+- SQLite inbox: event UUID and unique sequence, catalog payload or non-catalog metadata only.
+- SQLite sale_queue: immutable UUID/payload, Pending/InFlight/Conflict/Synced state, attempts, retry time, lease expiry, server completion response and error classification. Attempt tokens prevent expired lease owners from replacing newer results.
+- Migration: `20261017110655_OfflinePreparation`. No existing sale or ledger rows are rewritten.

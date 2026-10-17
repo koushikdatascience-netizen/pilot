@@ -2,7 +2,7 @@
 
 One POS for every business.
 
-Milestone 2 retail core built as a modular, India-ready commerce platform. Full offline sync is deferred.
+Retail core and Milestone 3 offline preparation for a modular, India-ready commerce platform. Fully offline checkout remains deferred.
 
 ## Backend
 
@@ -56,3 +56,29 @@ Use a randomly generated signing key of at least 32 bytes in shared environments
 - API-backed dashboard and POS frontend with product, customer, stock, reporting, and checkout workflows.
 
 Implementation and verification details: [Milestone 2 report](docs/MILESTONE_2_REPORT.md).
+
+## Milestone 3 Edge Preparation
+
+The .NET SQLite demonstrator caches the catalog, checkpoints a durable change feed, and queues immutable sale requests for server completion. It does not issue offline invoices or connect the browser POS to SQLite.
+
+With the API running, configure a separate database per device and register an active terminal using an administrator account:
+
+```powershell
+$env:PILOT_SERVER_URL='http://localhost:5088/'
+$env:PILOT_EDGE_DB='D:\pilot-data\edge.db'
+$env:PILOT_EDGE_EMAIL='admin@example.test'
+$env:PILOT_EDGE_PASSWORD=$env:DEMO_ADMIN_PASSWORD
+$env:PILOT_TERMINAL_ID='<active terminal UUID from /api/v1/tenancy/terminals>'
+dotnet run --project apps/edge/Pos.Edge -- sync
+dotnet run --project apps/edge/Pos.Edge -- status
+dotnet run --project apps/edge/Pos.Edge -- enqueue <sale-request.json>
+dotnet run --project apps/edge/Pos.Edge -- sync
+```
+
+`enqueue` and `status` work without a network after bootstrap. The JSON file uses the existing complete-sale contract: `locationId`, `terminalId`, permanent `clientGeneratedId`, optional `customerId`, `lines` (productId/quantity/discountAmount), and `payments` (method/amount/amountTendered/reference). Keep the same UUID and payload when retrying. Prices, tax, stock and authorization are checked by the server at upload time; requests can become conflicts rather than completed sales.
+
+`status` reports pending, leased/in-flight, conflict and synced counts plus the committed cursor. Conflicts stay retained for operator review, with no automatic rewrite or retry. This preparation milestone does not include a conflict-resolution UI. A process crash releases an upload through its two-minute lease; transient retries use bounded backoff. Run `sync` again to resume; the CLI is not a daemon.
+
+The SQLite file contains catalog and sale data, is not encrypted, and requires OS access controls and secure backups. Passwords and bearer tokens are not persisted by the client. Customer profiles are not cached, but queued identifiers and completed sale responses can contain personal information. Registration is one device per terminal; replacement/unregistration and device-specific credentials are deferred. Do not delete a database containing unresolved requests.
+
+Scope and verification: [Milestone 3 scope](docs/MILESTONE_3.md), [Milestone 3 report](docs/MILESTONE_3_REPORT.md).
