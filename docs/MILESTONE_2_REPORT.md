@@ -1,6 +1,6 @@
 # Pilot POS Milestone 2 Report
 
-Verified locally on 2026-10-17. Retail scope only. Remote GitHub Actions status is not yet verified.
+Verified locally and in GitHub Actions on 2026-10-17. Retail scope only.
 
 ## 1. Architecture
 
@@ -118,7 +118,9 @@ Solution build passed with zero warnings/errors. Full test run: 15 domain + 2 fa
 
 `.github/workflows/ci.yml` restores/builds .NET, runs solution tests against a PostgreSQL service, installs/tests/builds the web app, installs Chromium, and runs checkout E2E. Failures fail the job.
 
-The first remote run exposed vulnerable cryptography dependencies during restore. XML cryptography is updated to 10.0.13, which also updates PKCS. A replacement CI run is required; remote success is not claimed until it finishes.
+The first remote run exposed vulnerable cryptography dependencies during restore. XML cryptography and transitive PKCS were updated to 10.0.13. Fresh local restore passed.
+
+[GitHub Actions run 39026614710](https://github.com/koushikdatascience-netizen/pilot/actions/runs/39026614710) passed all steps for implementation commit `b2c94d7`, including PostgreSQL 16 tests and real-browser checkout.
 
 ## 18. Local Commands
 
@@ -161,8 +163,8 @@ Open `http://localhost:3000/login`. Development admin: `admin@example.test`, con
 - Daily report boundary is UTC.
 - Printing uses browser CSS/PDF; physical printer drivers/cash drawers are not integrated.
 - Gateways, refunds, full offline recovery/sync and vertical modules remain deferred.
-- Remote CI result is recorded below after the replacement run completes.
+- The CI runner reports action-runtime deprecation notices, but all required checks passed.
 
 ## 20. Acceptance
 
-Criteria 1-31 have local implementation/verification evidence across migrations, API tests, PostgreSQL concurrency/restart tests and real-browser checkout. Criterion 32 (GitHub Actions passes) remains unverified remotely. Do not interpret the local green run as a confirmed remote CI result.
+Criteria 1-32 have implementation/verification evidence across migrations, API tests, PostgreSQL concurrency/restart tests, real-browser checkout and the successful remote CI run linked above.
