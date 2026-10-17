@@ -118,7 +118,7 @@ Solution build passed with zero warnings/errors. Full test run: 15 domain + 2 fa
 
 `.github/workflows/ci.yml` restores/builds .NET, runs solution tests against a PostgreSQL service, installs/tests/builds the web app, installs Chromium, and runs checkout E2E. Failures fail the job.
 
-Remote Actions success is not claimed. The local GitHub CLI account reported an invalid stored token. A remote run must be checked after authenticated push.
+The first remote run exposed vulnerable cryptography dependencies during restore. XML cryptography is updated to 10.0.13, which also updates PKCS. A replacement CI run is required; remote success is not claimed until it finishes.
 
 ## 18. Local Commands
 
@@ -161,7 +161,7 @@ Open `http://localhost:3000/login`. Development admin: `admin@example.test`, con
 - Daily report boundary is UTC.
 - Printing uses browser CSS/PDF; physical printer drivers/cash drawers are not integrated.
 - Gateways, refunds, full offline recovery/sync and vertical modules remain deferred.
-- Remote CI execution is unverified until GitHub authentication is restored.
+- Remote CI result is recorded below after the replacement run completes.
 
 ## 20. Acceptance
 
