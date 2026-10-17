@@ -65,4 +65,4 @@ The existing GitHub Actions workflow automatically includes the added projects t
 
 ## Remote CI
 
-Pending implementation push and GitHub Actions verification.
+Implementation commit `e79342a` was pushed to `master`. [GitHub Actions run 39028252264](https://github.com/koushikdatascience-netizen/pilot/actions/runs/39028252264) passed .NET restore/build/all solution tests against PostgreSQL 16, frontend install/tests/production build, Chromium installation and real-browser checkout E2E. No CI failures remained.
