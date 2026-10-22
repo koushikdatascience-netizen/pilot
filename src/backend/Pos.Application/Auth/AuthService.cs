@@ -41,16 +41,9 @@ public sealed class AuthService
         if (!await _db.Tenants.AnyAsync(t => t.Id == user.TenantId && t.Status == Pos.Domain.Tenancy.TenantStatus.Active, cancellationToken))
             throw new ForbiddenException("Account is inactive.");
 
-        var roleIds = await _db.UserRoles.Where(ur => ur.UserId == user.Id)
-            .Join(_db.Roles.Where(r => r.TenantId == user.TenantId), ur => ur.RoleId, r => r.Id, (ur, r) => r.Id)
-            .ToArrayAsync(cancellationToken);
-        var permissions = await _db.RolePermissions
-            .Where(rp => roleIds.Contains(rp.RoleId))
-            .Select(rp => rp.Permission)
-            .Distinct()
-            .ToArrayAsync(cancellationToken);
+        var permissions = await IdentityPermissions.LoadAsync(_db, user.TenantId, user.Id, cancellationToken);
 
-        var currentUser = new CurrentUser(user.Id, user.TenantId, user.Email, permissions.ToHashSet());
+        var currentUser = new CurrentUser(user.Id, user.TenantId, user.Email, permissions.ToHashSet(), user.AuthVersion);
         return new LoginResponse(_tokenIssuer.Issue(currentUser), user.TenantId, user.Id, user.DisplayName, user.Email, permissions);
     }
 }

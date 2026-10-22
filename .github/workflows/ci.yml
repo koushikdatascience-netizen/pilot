@@ -4,6 +4,9 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   build-test:
     runs-on: ubuntu-latest
@@ -67,3 +70,65 @@ jobs:
         env:
           POSTGRES_CONNECTION_STRING: Host=localhost;Port=5432;Database=postgres;Username=postgres
           AUTH_SIGNING_KEY: ci-only-signing-key-at-least-32-bytes
+
+      - name: Package deployment candidate
+        env:
+          ConnectionStrings__Postgres: Host=localhost;Database=configuration_required;Username=configuration_required
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet publish src/backend/Pos.Api/Pos.Api.csproj -c Release --no-restore -o artifacts/api
+          dotnet tool restore
+          dotnet tool run dotnet-ef migrations bundle --project src/backend/Pos.Infrastructure/Pos.Infrastructure.csproj --startup-project src/backend/Pos.Api/Pos.Api.csproj --configuration Release --self-contained --target-runtime linux-x64 --output artifacts/efbundle
+          mkdir -p artifacts/web/.next
+          cp -a apps/web/.next/standalone/. artifacts/web/
+          cp -a apps/web/.next/static artifacts/web/.next/static
+          cp docs/DEPLOYMENT.md artifacts/DEPLOYMENT.md
+          printf '{"commit":"%s","runId":"%s","platform":"linux-x64"}\n' "$GITHUB_SHA" "$GITHUB_RUN_ID" > artifacts/manifest.json
+          tar -czf pilot-linux-x64.tar.gz -C artifacts .
+          sha256sum pilot-linux-x64.tar.gz > pilot-linux-x64.tar.gz.sha256
+
+      - name: Smoke test packaged API and migration bundle
+        env:
+          POSTGRES_CONTAINER: ${{ job.services.postgres.id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker exec "$POSTGRES_CONTAINER" psql -U postgres -c 'CREATE DATABASE pilot_bundle_smoke;'
+          export ConnectionStrings__Postgres='Host=localhost;Database=pilot_bundle_smoke;Username=postgres'
+          artifacts/efbundle
+          artifacts/efbundle
+          export POSTGRES_CONNECTION_STRING="$ConnectionStrings__Postgres"
+          export ASPNETCORE_ENVIRONMENT=Production
+          export AUTH_SIGNING_KEY="$(openssl rand -base64 48)"
+          dotnet artifacts/api/Pos.Api.dll --urls http://127.0.0.1:5099 > /tmp/pilot-package-smoke.log 2>&1 &
+          api_pid=$!
+          trap 'kill "$api_pid" 2>/dev/null || true' EXIT
+          ready=false
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:5099/health/ready; then ready=true; break; fi
+            sleep 1
+          done
+          [[ "$ready" == true ]]
+          [[ "$(docker exec "$POSTGRES_CONTAINER" psql -U postgres -d pilot_bundle_smoke -Atc 'SELECT count(*) FROM tenants')" == 0 ]]
+
+      - name: Upload deployment candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: pilot-linux-x64
+          path: |
+            pilot-linux-x64.tar.gz
+            pilot-linux-x64.tar.gz.sha256
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: Upload test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-evidence
+          path: |
+            tests/**/TestResults/*.trx
+            apps/web/test-results/
+          retention-days: 7
+          if-no-files-found: ignore

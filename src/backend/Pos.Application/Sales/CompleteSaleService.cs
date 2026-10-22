@@ -687,14 +687,12 @@ public sealed class CompleteSaleService
 
     private static bool IsRetryableDatabaseConcurrency(Exception ex)
     {
-        if (ex is DbUpdateConcurrencyException) return true;
+        if (DatabaseConcurrency.IsSerializationFailure(ex)) return true;
 
         var current = ex;
         while (current is not null)
         {
-            if (current is DbUpdateConcurrencyException) return true;
             var sqlState = current.GetType().GetProperty("SqlState", BindingFlags.Public | BindingFlags.Instance)?.GetValue(current) as string;
-            if (sqlState is "40001" or "40P01") return true;
             var constraint = current.GetType().GetProperty("ConstraintName")?.GetValue(current) as string;
             if (sqlState == "23505" && constraint?.Contains("ClientGeneratedId", StringComparison.Ordinal) == true) return true;
             current = current.InnerException;

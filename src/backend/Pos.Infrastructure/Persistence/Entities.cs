@@ -82,6 +82,7 @@ public sealed class User : TenantEntity
     public string Email { get; set; } = "";
     public string PasswordHash { get; set; } = "";
     public bool IsActive { get; set; } = true;
+    public int AuthVersion { get; set; } = 1;
 }
 
 public sealed class UserRole

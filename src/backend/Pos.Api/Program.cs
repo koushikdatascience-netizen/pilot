@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Pos.Api.Security;
 using Pos.Application.Auth;
+using Pos.Application.Administration;
 using Pos.Application.Catalog;
 using Pos.Application.Common;
 using Pos.Application.Customers;
@@ -57,6 +58,8 @@ builder.Services.AddDbContext<CommerceDbContext>(options => options.UseNpgsql(co
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<IPasswordHasher, Pbkdf2PasswordHasher>();
 builder.Services.AddScoped<AuthService>();
+builder.Services.AddScoped<AdministrationService>();
+builder.Services.AddScoped<AuditService>();
 builder.Services.AddScoped<ProductService>();
 builder.Services.AddScoped<CustomerService>();
 builder.Services.AddScoped<InventoryService>();
@@ -116,6 +119,7 @@ app.UseExceptionHandler(errorApp =>
             NotFoundException notFound => (StatusCodes.Status404NotFound, "Not found", notFound.Message, null),
             ForbiddenException => (StatusCodes.Status403Forbidden, "Forbidden", "The requested operation is not allowed.", null),
             ConflictException conflict => (StatusCodes.Status409Conflict, "Conflict", conflict.Message, null),
+            DbUpdateConcurrencyException => (StatusCodes.Status409Conflict, "Conflict", "Record changed. Refresh before retrying.", null),
             DbUpdateException { InnerException: Npgsql.PostgresException { SqlState: "23505" } } => (StatusCodes.Status409Conflict, "Conflict", "A record with the same identifier already exists.", null),
             DbUpdateException { InnerException: Npgsql.PostgresException { SqlState: "23503" or "22001" or "22003" } } => (StatusCodes.Status400BadRequest, "Invalid data", "A field or related record is invalid.", null),
             UnauthorizedAccessException => (StatusCodes.Status401Unauthorized, "Unauthorized", "Authentication is required.", null),
@@ -173,6 +177,23 @@ api.MapPost("/auth/login", async (AuthService auth, LoginRequest request, Cancel
     Results.Ok(await auth.LoginAsync(request, cancellationToken))).AllowAnonymous().RequireRateLimiting("login");
 
 var protectedApi = api.MapGroup("").RequireAuthorization();
+protectedApi.MapGet("/auth/me", async (CommerceDbContext db, ICurrentUserAccessor accessor, CancellationToken ct) =>
+{
+    var current = accessor.Current;
+    var user = await db.Users.AsNoTracking().SingleAsync(u => u.TenantId == current.TenantId && u.Id == current.UserId, ct);
+    return Results.Ok(new { current.TenantId, current.UserId, user.DisplayName, user.Email, Permissions = current.Permissions.Order().ToArray() });
+});
+var administration = protectedApi.MapGroup("/administration").RequireAuthorization(nameof(Permission.ManageUsers));
+administration.MapGet("/permissions", () => Results.Ok(Enum.GetNames<Permission>()));
+administration.MapGet("/roles", async (AdministrationService service, CancellationToken ct) => Results.Ok(await service.RolesAsync(ct)));
+administration.MapPost("/roles", async (AdministrationService service, SaveRoleRequest request, CancellationToken ct) => Results.Ok(await service.SaveRoleAsync(null, request, ct)));
+administration.MapPut("/roles/{id:guid}", async (AdministrationService service, Guid id, SaveRoleRequest request, CancellationToken ct) => Results.Ok(await service.SaveRoleAsync(id, request, ct)));
+administration.MapGet("/users", async (AdministrationService service, string? q, int? page, int? pageSize, CancellationToken ct) => Results.Ok(await service.UsersAsync(q, page ?? 1, pageSize ?? 20, ct)));
+administration.MapPost("/users", async (AdministrationService service, CreateUserRequest request, CancellationToken ct) => Results.Ok(await service.CreateUserAsync(request, ct)));
+administration.MapPut("/users/{id:guid}", async (AdministrationService service, Guid id, UpdateUserRequest request, CancellationToken ct) => Results.Ok(await service.UpdateUserAsync(id, request, ct)));
+administration.MapPost("/users/{id:guid}/password", async (AdministrationService service, Guid id, ResetPasswordRequest request, CancellationToken ct) => Results.Ok(await service.ResetPasswordAsync(id, request, ct)));
+protectedApi.MapGet("/audit", [Authorize(Policy = nameof(Permission.ViewAudit))] async (AuditService service, string? action, string? entity, Guid? actorId, DateTimeOffset? fromUtc, DateTimeOffset? toUtc, int? page, int? pageSize, CancellationToken ct) =>
+    Results.Ok(await service.ListAsync(action, entity, actorId, fromUtc, toUtc, page ?? 1, pageSize ?? 20, ct)));
 protectedApi.MapPost("/sync/devices", [Authorize(Policy = nameof(Permission.ManageSettings))] async (SyncService service, RegisterDeviceRequest request, CancellationToken ct) =>
     Results.Ok(await service.RegisterAsync(request, ct)));
 var sync = protectedApi.MapGroup("/sync/devices/{deviceId:guid}").RequireAuthorization(nameof(Permission.CompleteSale));

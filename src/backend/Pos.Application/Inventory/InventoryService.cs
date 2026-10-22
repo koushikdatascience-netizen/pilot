@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Pos.Application.Common;
 using Pos.Infrastructure.Persistence;
 using InventoryTransactionType = Pos.Domain.Inventory.InventoryTransactionType;
@@ -11,11 +12,13 @@ public sealed class InventoryService
 {
     private readonly CommerceDbContext _db;
     private readonly ITenantContext _tenant;
+    private readonly ILogger<InventoryService> _logger;
 
-    public InventoryService(CommerceDbContext db, ITenantContext tenant)
+    public InventoryService(CommerceDbContext db, ITenantContext tenant, ILogger<InventoryService> logger)
     {
         _db = db;
         _tenant = tenant;
+        _logger = logger;
     }
 
     public async Task<IReadOnlyList<StockBalanceResponse>> BalancesAsync(CancellationToken cancellationToken)
@@ -77,8 +80,25 @@ public sealed class InventoryService
 
     public async Task<InventoryTransactionResponse> AdjustAsync(StockAdjustmentRequest request, CancellationToken cancellationToken)
     {
+        for (var attempt = 1; attempt <= 5; attempt++)
+        {
+            try { return await AdjustOnceAsync(request, cancellationToken); }
+            catch (Exception ex) when (DatabaseConcurrency.IsSerializationFailure(ex))
+            {
+                _logger.LogWarning(ex, "Inventory adjustment concurrency failure. Attempt {Attempt}. TenantId={TenantId} ProductId={ProductId}", attempt, _tenant.TenantId, request.ProductId);
+                if (attempt == 5) throw new ConflictException("Stock changed concurrently. Please retry the adjustment.");
+                _db.ChangeTracker.Clear();
+                await Task.Delay(TimeSpan.FromMilliseconds(Random.Shared.Next(150, 350) * (1 << (attempt - 1))), cancellationToken);
+            }
+        }
+        throw new ConflictException("Stock changed concurrently. Please retry the adjustment.");
+    }
+
+    private async Task<InventoryTransactionResponse> AdjustOnceAsync(StockAdjustmentRequest request, CancellationToken cancellationToken)
+    {
         Validate(request);
-        await using var transaction = await _db.Database.BeginTransactionAsync(System.Data.IsolationLevel.ReadCommitted, cancellationToken);
+        // All stock-decreasing writers must participate in PostgreSQL's serializable conflict detection.
+        await using var transaction = await _db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, cancellationToken);
         await TransactionLocks.StockAsync(_db, _tenant.TenantId, request.WarehouseId, request.ProductId, cancellationToken);
         var location = await _db.Locations.SingleOrDefaultAsync(l => l.TenantId == _tenant.TenantId && l.Id == request.LocationId, cancellationToken)
             ?? throw new NotFoundException("Location was not found for this tenant.");

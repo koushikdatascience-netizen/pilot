@@ -78,6 +78,8 @@ namespace Pos.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("TenantId", "EntityName", "EntityId");
 
+                    b.HasIndex("TenantId", "OccurredAtUtc", "Id");
+
                     b.ToTable("audit_logs", (string)null);
                 });
 
@@ -1107,6 +1109,9 @@ namespace Pos.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
+
+                    b.Property<int>("AuthVersion")
+                        .HasColumnType("integer");
 
                     b.Property<DateTimeOffset>("CreatedAtUtc")
                         .HasColumnType("timestamp with time zone");

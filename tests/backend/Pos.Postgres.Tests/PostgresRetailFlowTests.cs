@@ -1,4 +1,5 @@
 using System.Net;
+using System.Data.Common;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -6,6 +7,7 @@ using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
@@ -294,6 +296,53 @@ public sealed class PostgresRetailFlowTests
     }
 
     [Fact]
+    public async Task Checkout_snapshot_taken_before_a_committed_adjustment_cannot_consume_old_stock()
+    {
+        await using var factory = await PostgresTestAppFactory.CreateAsync();
+        var pause = new PauseProductRead();
+        factory.CommandInterceptor = pause;
+        using var client = await AuthenticatedClientAsync(factory);
+        var boot = (await client.GetFromJsonAsync<BootstrapResponse>("/api/v1/tenancy/bootstrap", JsonOptions))!;
+        var product = await CreateProductWithStockAsync(client, boot, "SNAPSHOT", 10, 1);
+        pause.Armed = true;
+        var sale = client.PostAsJsonAsync("/api/v1/sales/complete", new CompleteSaleRequest(
+            boot.LocationId, boot.TerminalId, null, Guid.NewGuid(),
+            [new CompleteSaleLineRequest(product.Id, 1, 0)], [new CompleteSalePaymentRequest(PaymentMethod.Cash, 10, 10, null)]), JsonOptions);
+        try
+        {
+            // Checkout already has a serializable snapshot, but has not acquired its stock lock.
+            await pause.Entered.Task.WaitAsync(TimeSpan.FromSeconds(30));
+            var adjustment = await client.PostAsJsonAsync("/api/v1/inventory/adjustments", new StockAdjustmentRequest(
+                boot.LocationId, boot.WarehouseId, product.Id, 1, null, InventoryTransactionType.Damage, "Snapshot race"), JsonOptions);
+            Assert.Equal(HttpStatusCode.Created, adjustment.StatusCode);
+        }
+        finally { pause.Release.TrySetResult(); }
+        Assert.Equal(HttpStatusCode.Conflict, (await sale.WaitAsync(TimeSpan.FromSeconds(30))).StatusCode);
+        await using var scope = factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<CommerceDbContext>();
+        Assert.Equal(0m, await db.InventoryTransactions.Where(t => t.ProductId == product.Id).SumAsync(t => t.QuantityDelta));
+        Assert.False(await db.Sales.AnyAsync());
+        Assert.False(await db.OutboxEvents.AnyAsync(e => e.EventType == "SaleCompleted"));
+    }
+
+    private sealed class PauseProductRead : DbCommandInterceptor
+    {
+        private int _paused;
+        public bool Armed { get; set; }
+        public TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public override async ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(DbCommand command, CommandEventData eventData, InterceptionResult<DbDataReader> result, CancellationToken cancellationToken = default)
+        {
+            if (Armed && command.CommandText.Contains("FROM products", StringComparison.Ordinal) && Interlocked.CompareExchange(ref _paused, 1, 0) == 0)
+            {
+                Entered.TrySetResult();
+                await Release.Task.WaitAsync(cancellationToken);
+            }
+            return result;
+        }
+    }
+
+    [Fact]
     public async Task Held_cart_edits_preserve_sale_identity_and_apply_only_final_quantities()
     {
         await using var factory = await PostgresTestAppFactory.CreateAsync();
@@ -456,6 +505,7 @@ public sealed class PostgresRetailFlowTests
 
 public sealed class PostgresTestAppFactory : WebApplicationFactory<Program>
 {
+    public DbCommandInterceptor? CommandInterceptor { get; set; }
     private readonly string _adminConnectionString;
     private readonly string _databaseName;
     private readonly string _appConnectionString;
@@ -505,7 +555,11 @@ public sealed class PostgresTestAppFactory : WebApplicationFactory<Program>
                 d.ServiceType == typeof(DbContextOptions<CommerceDbContext>) ||
                 d.ServiceType.FullName?.Contains("IDbContextOptionsConfiguration", StringComparison.Ordinal) == true).ToArray();
             foreach (var descriptor in descriptors) services.Remove(descriptor);
-            services.AddDbContext<CommerceDbContext>(options => options.UseNpgsql(_appConnectionString));
+            services.AddDbContext<CommerceDbContext>(options =>
+            {
+                options.UseNpgsql(_appConnectionString);
+                if (CommandInterceptor is not null) options.AddInterceptors(CommandInterceptor);
+            });
             using var provider = services.BuildServiceProvider();
             using var scope = provider.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<CommerceDbContext>();

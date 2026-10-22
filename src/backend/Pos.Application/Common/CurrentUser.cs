@@ -2,7 +2,7 @@ using Pos.Domain.Identity;
 
 namespace Pos.Application.Common;
 
-public sealed record CurrentUser(Guid UserId, Guid TenantId, string Email, IReadOnlySet<Permission> Permissions);
+public sealed record CurrentUser(Guid UserId, Guid TenantId, string Email, IReadOnlySet<Permission> Permissions, int AuthVersion = 1);
 
 public interface ICurrentUserAccessor
 {

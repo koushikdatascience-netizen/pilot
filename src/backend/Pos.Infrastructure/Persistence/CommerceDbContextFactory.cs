@@ -9,7 +9,7 @@ public sealed class CommerceDbContextFactory : IDesignTimeDbContextFactory<Comme
     {
         var connectionString = Environment.GetEnvironmentVariable("ConnectionStrings__Postgres")
             ?? Environment.GetEnvironmentVariable("POSTGRES_CONNECTION_STRING")
-            ?? "Host=localhost;Port=5432;Database=universal_commerce;Username=commerce;Password=commerce_dev_password";
+            ?? throw new InvalidOperationException("Set ConnectionStrings__Postgres or POSTGRES_CONNECTION_STRING explicitly for EF tools.");
 
         var options = new DbContextOptionsBuilder<CommerceDbContext>()
             .UseNpgsql(connectionString)

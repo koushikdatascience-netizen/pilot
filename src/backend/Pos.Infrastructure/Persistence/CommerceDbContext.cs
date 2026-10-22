@@ -274,6 +274,7 @@ public sealed class CommerceDbContext : DbContext
             entity.Property(x => x.BeforeJson).HasColumnType("jsonb");
             entity.Property(x => x.AfterJson).HasColumnType("jsonb");
             entity.HasIndex(x => new { x.TenantId, x.EntityName, x.EntityId });
+            entity.HasIndex(x => new { x.TenantId, x.OccurredAtUtc, x.Id });
         });
 
         modelBuilder.Entity<OutboxEvent>(entity =>

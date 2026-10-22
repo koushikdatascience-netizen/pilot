@@ -2,7 +2,7 @@
 
 One POS for every business.
 
-Retail core and Milestone 3 offline preparation for a modular, India-ready commerce platform. Fully offline checkout remains deferred.
+Retail core, offline preparation and operational hardening for a modular, India-ready commerce platform. Fully offline checkout remains deferred.
 
 ## Backend
 
@@ -30,7 +30,7 @@ npm run dev
 
 Open `http://localhost:3000/login`. Development seed credentials are `admin@example.test` or `cashier@example.test` with the configured `DEMO_ADMIN_PASSWORD` (local default: `ChangeMe123!`). Credentials are entered at sign-in, not embedded in the browser bundle.
 
-The Next.js app expects `NEXT_PUBLIC_API_BASE_URL=http://localhost:5088`. Select an active terminal before checkout; the last valid selection is remembered per tenant.
+The Next.js app uses same-origin API requests by default and proxies `/api/v1` to the local API on port 5088. `NEXT_PUBLIC_API_BASE_URL` is an optional build-time override. Select an active terminal before checkout; the last valid selection is remembered per tenant.
 
 Run `npm run test:e2e` after `npx playwright install chromium` and the production build. Playwright starts the API and web server when they are not already running. The test adds opening stock and completes a sale, so use a development/test database. Receipt PDFs and desktop/tablet/mobile screenshots are written under `apps/web/test-results`.
 
@@ -82,3 +82,13 @@ dotnet run --project apps/edge/Pos.Edge -- sync
 The SQLite file contains catalog and sale data, is not encrypted, and requires OS access controls and secure backups. Passwords and bearer tokens are not persisted by the client. Customer profiles are not cached, but queued identifiers and completed sale responses can contain personal information. Registration is one device per terminal; replacement/unregistration and device-specific credentials are deferred. Do not delete a database containing unresolved requests.
 
 Scope and verification: [Milestone 3 scope](docs/MILESTONE_3.md), [Milestone 3 report](docs/MILESTONE_3_REPORT.md).
+
+## Milestone 4 Operations
+
+Open `/administration` after signing in. ManageUsers grants user/role administration; ViewAudit grants paged, read-only audit review. Existing ManageSettings roles receive both permissions once through the upgrade migration; later role edits are not overwritten by startup seeding. The seeded development administrator receives all permissions; cashiers receive neither administrative permission.
+
+Users support name/status/role edits, creation and administrator password resets. New/reset passwords require 12-128 characters. Password resets and status changes invalidate existing sessions; permissions are reloaded from PostgreSQL on every authenticated request. A tenant-scoped identity lock and last-active-administrator check prevent accidental lockout. Stale edits return 409 and require refresh. Users/roles are retained rather than hard-deleted. Audit changes include safe before/after metadata, never passwords or password hashes.
+
+`npm run start` starts the built standalone web runtime and stages its static files. CI tests that runtime before packaging Linux API/web output and a self-contained EF migration bundle. EF tools require an explicitly configured database connection; they no longer silently choose a demo database.
+
+See [Milestone 4 scope](docs/MILESTONE_4.md), [verification report](docs/MILESTONE_4_REPORT.md) and [deployment runbook](docs/DEPLOYMENT.md). Production deployment remains an operator handoff until a target host, secrets and release-environment reviewers are configured; the repository does not provision or silently deploy production infrastructure.

@@ -1,0 +1,65 @@
+name: Approve Deployment Candidate
+
+on:
+  workflow_dispatch:
+    inputs:
+      ci_run_id:
+        description: Successful CI push run for the current master commit
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: deployment-candidate
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify source run provenance
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CI_RUN_ID: ${{ inputs.ci_run_id }}
+          EXPECTED_SHA: ${{ github.sha }}
+          REPOSITORY: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$CI_RUN_ID" =~ ^[0-9]+$ ]]
+          gh api "repos/$REPOSITORY/actions/runs/$CI_RUN_ID" > run.json
+          jq -e --arg sha "$EXPECTED_SHA" '.conclusion == "success" and .event == "push" and .head_branch == "master" and .head_sha == $sha and .path == ".github/workflows/ci.yml"' run.json
+
+  approve:
+    needs: verify
+    environment: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download tested candidate
+        uses: actions/download-artifact@v4
+        with:
+          name: pilot-linux-x64
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.ci_run_id }}
+      - name: Verify package and record approved handoff
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha256sum --check pilot-linux-x64.tar.gz.sha256
+          tar -xOf pilot-linux-x64.tar.gz ./manifest.json | jq -e --arg sha "$EXPECTED_SHA" '.commit == $sha'
+          printf 'Approved deployment candidate for `%s`. No target host is configured and no database migration or live deployment was performed. Follow docs/DEPLOYMENT.md.\n' "$EXPECTED_SHA" >> "$GITHUB_STEP_SUMMARY"
+      - name: Preserve approved candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: approved-pilot-linux-x64
+          path: |
+            pilot-linux-x64.tar.gz
+            pilot-linux-x64.tar.gz.sha256
+          retention-days: 14
+          if-no-files-found: error

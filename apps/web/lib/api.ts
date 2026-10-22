@@ -33,6 +33,9 @@ export type ProductResponse = {
 };
 
 export type PagedResponse<T> = { items: T[]; page: number; pageSize: number; totalCount: number };
+export type AdminRole = { id: string; name: string; version: number; permissions: string[] };
+export type AdminUser = { id: string; displayName: string; email: string; isActive: boolean; version: number; roleIds: string[] };
+export type AuditEntry = { id: string; actorUserId: string | null; actorName: string | null; action: string; entityName: string; entityId: string; terminalId: string | null; occurredAtUtc: string; beforeJson: string | null; afterJson: string | null };
 export type TerminalContextResponse = { tenantId: string; organizationId: string; businessId: string; locationId: string; locationName: string; terminalId: string; terminalName: string; warehouseId: string };
 export type CategoryResponse = { id: string; name: string; parentCategoryId: string | null };
 export type TaxCategoryResponse = { id: string; name: string; countryCode: string; rate: number; taxBehavior: "Inclusive" | "Exclusive" };
@@ -44,11 +47,17 @@ export type SaleLineResponse = { id: string; productId: string; productName: str
 export type SaleResponse = { id: string; locationId: string; terminalId: string; customerId: string | null; invoiceNumber: string; status: string; currency: string; subtotal: number; discountTotal: number; taxTotal: number; grandTotal: number; clientGeneratedId: string; completedAtUtc: string | null; syncStatus: string; lines: SaleLineResponse[]; payments: PaymentResponse[]; idempotentReplay: boolean; receipt: ReceiptHeader | null };
 export type TodayReportResponse = { revenue: number; transactionCount: number; averageOrderValue: number; itemsSold: number; paymentMix: { method: string; amount: number; count: number }[]; topSellingProducts: { productId: string; productName: string; quantity: number; revenue: number }[]; lowStockProducts: { productId: string; productName: string; quantityOnHand: number }[] };
 
-const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:5088";
+const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
 export async function login(email?: string, password?: string): Promise<LoginResponse> {
   if (email === undefined) {
     const saved = sessionStorage.getItem("pilot-session");
-    if (saved) return JSON.parse(saved) as LoginResponse;
+    if (saved) {
+      const session = JSON.parse(saved) as LoginResponse;
+      const current = await request<Omit<LoginResponse, "accessToken">>("/api/v1/auth/me", {}, session.accessToken);
+      const refreshed = { ...session, ...current };
+      sessionStorage.setItem("pilot-session", JSON.stringify(refreshed));
+      return refreshed;
+    }
     window.location.assign("/login");
     throw new Error("Sign in to continue.");
   }
@@ -77,7 +86,12 @@ export async function request<T>(path: string, init: RequestInit = {}, token?: s
       window.location.assign("/login");
     }
     const text = await response.text();
-    throw Object.assign(new Error(text || `Request failed with ${response.status}`), { status: response.status });
+    let message = text || `Request failed with ${response.status}`;
+    try {
+      const problem = JSON.parse(text);
+      message = problem.errors ? Object.values(problem.errors).flat().join(" ") : problem.detail || problem.title || message;
+    } catch { /* Non-JSON error responses retain the server's text. */ }
+    throw Object.assign(new Error(message), { status: response.status });
   }
 
   return response.json() as Promise<T>;
@@ -85,6 +99,14 @@ export async function request<T>(path: string, init: RequestInit = {}, token?: s
 
 export function createClient(token: string) {
   return {
+    me: () => request<Omit<LoginResponse, "accessToken">>("/api/v1/auth/me", {}, token),
+    adminPermissions: () => request<string[]>("/api/v1/administration/permissions", {}, token),
+    adminRoles: () => request<AdminRole[]>("/api/v1/administration/roles", {}, token),
+    adminUsers: (q: string, page: number) => request<PagedResponse<AdminUser>>(`/api/v1/administration/users?q=${encodeURIComponent(q)}&page=${page}`, {}, token),
+    saveRole: (id: string | null, body: unknown) => request<AdminRole>(`/api/v1/administration/roles${id ? `/${id}` : ""}`, { method: id ? "PUT" : "POST", body: JSON.stringify(body) }, token),
+    saveUser: (id: string | null, body: unknown) => request<AdminUser>(`/api/v1/administration/users${id ? `/${id}` : ""}`, { method: id ? "PUT" : "POST", body: JSON.stringify(body) }, token),
+    resetPassword: (id: string, body: unknown) => request<AdminUser>(`/api/v1/administration/users/${id}/password`, { method: "POST", body: JSON.stringify(body) }, token),
+    audit: (query: string) => request<PagedResponse<AuditEntry>>(`/api/v1/audit?${query}`, {}, token),
     bootstrap: () => request<BootstrapResponse>("/api/v1/tenancy/bootstrap", {}, token),
     terminals: () => request<TerminalContextResponse[]>("/api/v1/tenancy/terminals", {}, token),
     productPage: (q = "", page = 1, pageSize = 50, includeInactive = false) => request<PagedResponse<ProductResponse>>(`/api/v1/products?page=${page}&pageSize=${pageSize}&includeInactive=${includeInactive}${q ? `&q=${encodeURIComponent(q)}` : ""}`, {}, token),

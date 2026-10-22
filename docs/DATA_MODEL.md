@@ -172,3 +172,12 @@ OutboxEvent:
 - SQLite inbox: event UUID and unique sequence, catalog payload or non-catalog metadata only.
 - SQLite sale_queue: immutable UUID/payload, Pending/InFlight/Conflict/Synced state, attempts, retry time, lease expiry, server completion response and error classification. Attempt tokens prevent expired lease owners from replacing newer results.
 - Migration: `20261017110655_OfflinePreparation`. No existing sale or ledger rows are rewritten.
+
+## Milestone 4 Additions
+
+- User.AuthVersion: credential/session generation, initialized to 1 for existing accounts. Reset and status transitions increment it. It is distinct from the ordinary optimistic Version token and is not exposed in public user responses.
+- Permission enum appends ManageUsers and ViewAudit without renumbering prior values; storage remains string-valued. The migration copies these grants once from existing ManageSettings roles.
+- A migration-owned PostgreSQL expression index, `IX_users_NormalizedEmail` on `lower("Email")`, guarantees global email identity for the email-only login contract. It intentionally fails on ambiguous existing accounts instead of merging them. EF's ordinary tenant/email index remains.
+- Audit index `(TenantId, OccurredAtUtc, Id)` supports tenant-scoped ordered review. Identity audits retain before/after names, role IDs/permission names and status, but exclude password/hash/token material. PasswordReset records only session revocation metadata.
+- Existing user/role Version values protect stale editor submissions. Identity transactions additionally serialize tenant administrators and enforce an active ManageUsers holder after changes. No hard-delete or audit-edit API is introduced.
+- Migration: `20261021100216_OperationalHardening`. Financial records and edge data formats remain unchanged.

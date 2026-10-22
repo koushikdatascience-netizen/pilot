@@ -9,7 +9,9 @@ public enum Permission
     CompleteSale,
     ApplyDiscount,
     ViewReports,
-    ManageSettings
+    ManageSettings,
+    ManageUsers,
+    ViewAudit
 }
 
 public sealed record Role : TenantEntity

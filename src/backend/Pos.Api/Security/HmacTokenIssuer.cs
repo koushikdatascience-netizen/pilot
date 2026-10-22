@@ -18,7 +18,7 @@ public sealed class HmacTokenIssuer : ITokenIssuer
 
     public string Issue(CurrentUser user)
     {
-        var payload = new TokenPayload(user.UserId, user.TenantId, user.Email, user.Permissions.Select(p => p.ToString()).ToArray(), DateTimeOffset.UtcNow.AddHours(8).ToUnixTimeSeconds());
+        var payload = new TokenPayload(user.UserId, user.TenantId, user.Email, user.Permissions.Select(p => p.ToString()).ToArray(), DateTimeOffset.UtcNow.AddHours(8).ToUnixTimeSeconds(), user.AuthVersion);
         var payloadPart = Base64Url(JsonSerializer.SerializeToUtf8Bytes(payload));
         return $"{payloadPart}.{Sign(payloadPart, SigningKey(_configuration))}";
     }
@@ -38,7 +38,8 @@ public sealed class HmacTokenIssuer : ITokenIssuer
         {
             new(ClaimTypes.NameIdentifier, payload.UserId.ToString()),
             new(ClaimTypes.Email, payload.Email),
-            new("tenant_id", payload.TenantId.ToString())
+            new("tenant_id", payload.TenantId.ToString()),
+            new("auth_version", payload.AuthVersion.ToString(System.Globalization.CultureInfo.InvariantCulture))
         };
         claims.AddRange(payload.Permissions.Select(p => new Claim("permission", p)));
         return new ClaimsPrincipal(new ClaimsIdentity(claims, SignedBearerAuthenticationHandler.SchemeName));
@@ -68,5 +69,5 @@ public sealed class HmacTokenIssuer : ITokenIssuer
         return Convert.FromBase64String(padded);
     }
 
-    private sealed record TokenPayload(Guid UserId, Guid TenantId, string Email, IReadOnlyList<string> Permissions, long ExpiresAtUnix);
+    private sealed record TokenPayload(Guid UserId, Guid TenantId, string Email, IReadOnlyList<string> Permissions, long ExpiresAtUnix, int AuthVersion = 1);
 }
