@@ -54,6 +54,11 @@ public sealed class ReportingService
             .ToArrayAsync(cancellationToken);
 
         var revenue = Money.Round(sales.Sum(s => s.GrandTotal));
-        return new TodayReportResponse(revenue, sales.Length, sales.Length == 0 ? 0 : Money.Round(sales.Average(s => s.GrandTotal)), itemsSold, paymentMix, top, low);
+        var corrections = await _db.SaleCorrections.AsNoTracking().Where(c => c.TenantId == _tenant.TenantId && c.OccurredAtUtc >= today && c.OccurredAtUtc < tomorrow).ToArrayAsync(cancellationToken);
+        var correctionIds = corrections.Select(c => c.Id).ToArray();
+        var refundMix = await _db.SaleRefunds.AsNoTracking().Where(r => r.TenantId == _tenant.TenantId && correctionIds.Contains(r.CorrectionId))
+            .GroupBy(r => r.Method).Select(g => new PaymentMixResponse(g.Key.ToString(), g.Sum(r => r.Amount), g.Count())).ToArrayAsync(cancellationToken);
+        var refundTotal = corrections.Sum(c => c.Total);
+        return new TodayReportResponse(revenue - refundTotal, sales.Length, sales.Length == 0 ? 0 : Money.Round(sales.Average(s => s.GrandTotal)), itemsSold, paymentMix, top, low, revenue, refundTotal, refundMix);
     }
 }

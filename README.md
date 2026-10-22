@@ -92,3 +92,13 @@ Users support name/status/role edits, creation and administrator password resets
 `npm run start` starts the built standalone web runtime and stages its static files. CI tests that runtime before packaging Linux API/web output and a self-contained EF migration bundle. EF tools require an explicitly configured database connection; they no longer silently choose a demo database.
 
 See [Milestone 4 scope](docs/MILESTONE_4.md), [verification report](docs/MILESTONE_4_REPORT.md) and [deployment runbook](docs/DEPLOYMENT.md). Production deployment remains an operator handoff until a target host, secrets and release-environment reviewers are configured; the repository does not provision or silently deploy production infrastructure.
+
+## Milestone 5 Retail Operations
+
+Open an original receipt from sales history to record a partial return or full completed-sale void. Held carts can be voided from the POS. ProcessReturns and VoidSales are separate permissions. Completed originals stay unchanged; separate correction receipts retain the reason, original line amounts, restock decision and manual refund allocation. A completed sale with an earlier correction cannot be voided. Refunds cannot exceed the remaining original tender; electronic refund records require an operator reference. These records do not execute payment-provider refunds or submit statutory credit notes.
+
+Open `/cash-drawer` with ManageCashDrawer to open a terminal session, record paid-in/out and close against counted cash. Existing checkout remains usable without an open drawer; cash refunds require an open processing-terminal drawer with enough expected cash. Cash movements use the amount due, not tendered cash including change. Session closure freezes expected cash and variance. No physical drawer driver is included.
+
+The migration grants the three new permissions once to existing ManageSettings roles, not cashiers. Rejected requests leave no financial/stock changes; uncertain browser requests retain their UUID and payload in session storage for retry, including after a reload in the same tab. Do not clear session storage or close the tab with an unresolved command. Today's dashboard distinguishes gross sales, corrections recorded today and net revenue, including returns of earlier invoices.
+
+See [Milestone 5 scope](docs/MILESTONE_5.md) and [verification report](docs/MILESTONE_5_REPORT.md).

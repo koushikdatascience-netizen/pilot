@@ -86,6 +86,16 @@ Tenant-owned entity relationships use composite tenant/identifier foreign keys. 
 
 The web app uses an explicit sign-in route and session-scoped bearer token. Login is rate-limited; disabled users and tenants are rejected on authenticated requests. Request correlation scopes are included in JSON logs. The custom HMAC bearer format is retained for this milestone.
 
+## Retail Correction And Drawer Transactions
+
+Milestone 5 adds SaleCorrectionService and CashDrawerService, with independent ProcessReturns, VoidSales and ManageCashDrawer policies. Original completed sales, payment captures and negative inventory entries remain immutable. Separate corrections reference the original lines, preserve historical discounts/tax, and optionally append positive SaleReturn ledger entries to the original warehouse. Effective returned/voided status is derived without rewriting completed invoices. Held/Draft cancellation alone transitions the original open status to Voided; an expected-status guard prevents a concurrent completion from turning a cart cancellation into a monetary reversal.
+
+Corrections use Serializable transactions, per-command/per-sale advisory locks, payload hashes and bounded concurrency retries. Cumulative decimal allocation divides original gross by returned quantity, tax within gross and central/state tax within tax; this avoids negative partial components and makes full returns exact. Captured AmountDue less earlier refunds caps each tender. Inventory, refunds, drawer capture, audits and outbox events commit together. Electronic tender refunds are operator records, not gateway calls.
+
+Drawer sessions are terminal-scoped with a partial unique index allowing one open session. All opening, closing, paid-in/out and sale/refund capture share a terminal advisory lock. Movements also advance the session concurrency token, protecting against a transaction snapshot older than closure. Expected cash is opening float plus signed movements; closing stores expected/count/variance without later edits. No-session checkout remains valid, but cash refunds require sufficient cash in an open processing-terminal session. The browser freezes uncertain command UUIDs/payloads in session storage for replay after network loss. It is not offline refund processing or a durable cross-device work queue.
+
+Reporting keeps gross invoices and tender captures separate from correction totals/refund mix. Net daily revenue subtracts corrections recorded today, regardless of original invoice date.
+
 ## Offline And Sync Strategy
 
 The product is offline-first by design. Milestone 1.5 keeps the future edge path intact:

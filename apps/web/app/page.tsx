@@ -1,6 +1,6 @@
 "use client";
 
-import { BarChart3, Boxes, CreditCard, LogOut, PackageSearch, RefreshCw, Shield, ShoppingCart, Users } from "lucide-react";
+import { Banknote, BarChart3, Boxes, CreditCard, LogOut, PackageSearch, RefreshCw, Shield, ShoppingCart, Users } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { BootstrapResponse, CategoryResponse, TaxCategoryResponse, TodayReportResponse, createClient, login } from "../lib/api";
@@ -40,7 +40,7 @@ export default function Dashboard() {
   }, []);
   return <main className="shell"><aside className="sidebar"><div className="brand">Pilot POS</div><nav>{nav.map(([label, id, Icon]) => <a href={"#" + id} key={id}><Icon size={18}/><span>{label}</span></a>)}</nav></aside>
     <section className="workspace"><header className="topbar"><div><p className="eyebrow">{context?.tenantName ?? "Pilot POS"}</p><h1>Retail Operations</h1>{error && <p role="alert" className="sync-error">{error}</p>}</div>
-      <div className="toolbar"><Link className="icon-button" href="/administration" title="Administration" aria-label="Administration"><Shield size={18}/></Link><button className="icon-button" title="Refresh dashboard" aria-label="Refresh dashboard" onClick={() => refresh()}><RefreshCw size={18}/></button><Link className="primary-link" href="/pos"><ShoppingCart size={18}/>Open POS</Link><button className="icon-button" title="Sign out" aria-label="Sign out" onClick={() => { sessionStorage.removeItem("pilot-session"); window.location.assign("/login"); }}><LogOut size={18}/></button></div></header>
+      <div className="toolbar"><Link className="icon-button" href="/cash-drawer" title="Cash drawer" aria-label="Cash drawer"><Banknote size={18}/></Link><Link className="icon-button" href="/administration" title="Administration" aria-label="Administration"><Shield size={18}/></Link><button className="icon-button" title="Refresh dashboard" aria-label="Refresh dashboard" onClick={() => refresh()}><RefreshCw size={18}/></button><Link className="primary-link" href="/pos"><ShoppingCart size={18}/>Open POS</Link><button className="icon-button" title="Sign out" aria-label="Sign out" onClick={() => { sessionStorage.removeItem("pilot-session"); window.location.assign("/login"); }}><LogOut size={18}/></button></div></header>
       <RetailOverview report={report}/>
       <ProductManager client={client} categories={categories} taxes={taxes}/>
       <SaleHistory client={client}/>

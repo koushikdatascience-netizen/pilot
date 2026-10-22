@@ -4,6 +4,7 @@ import { Minus, Plus, Printer, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { ProductResponse, SaleResponse } from "../lib/api";
 import { formatMoney } from "../lib/pos-calculations.mjs";
+import { printReceipt } from "../lib/print-receipt";
 
 export type CartLine = ProductResponse & { quantity: number; discount: number; taxRate: number; taxBehavior: "Inclusive" | "Exclusive" };
 type Tender = { method: string; amount: string; tendered: string };
@@ -41,7 +42,7 @@ export function PaymentPanel({ payments, total, disabled, onChange }: { payments
 
 export function ReceiptView({ sale }: { sale: SaleResponse }) {
   const [paper, setPaper] = useState("80");
-  return <section className={`receipt paper-${paper}`} aria-label="Receipt"><style media="print">{`@page { size: ${paper}mm 297mm; margin: 0; }`}</style><div className="panel-title"><strong>Pilot POS</strong><select aria-label="Receipt paper width" value={paper} onChange={e => setPaper(e.target.value)}><option value="58">58mm</option><option value="80">80mm</option></select><button className="icon-button" title="Print receipt" aria-label="Print receipt" onClick={() => window.print()}><Printer size={16}/></button></div>
+  return <section className={`receipt paper-${paper}`} aria-label="Receipt"><style media="print">{`@page { size: ${paper}mm 297mm; margin: 0; }`}</style><div className="panel-title"><strong>Pilot POS</strong><select aria-label="Receipt paper width" value={paper} onChange={e => setPaper(e.target.value)}><option value="58">58mm</option><option value="80">80mm</option></select><button className="icon-button" title="Print receipt" aria-label="Print receipt" onClick={() => printReceipt("sale")}><Printer size={16}/></button></div>
     {sale.receipt && <div><strong>{sale.receipt.legalName}</strong><span> {sale.receipt.businessName} | {sale.receipt.locationName}</span><small>{sale.receipt.address} | GSTIN {sale.receipt.gstin}</small><small>{sale.receipt.terminalName} | {sale.receipt.cashierName} | {sale.receipt.customerName}</small></div>}
     <span>{sale.invoiceNumber}</span><time>{sale.completedAtUtc ? new Date(sale.completedAtUtc).toLocaleString() : ""}</time>
     {sale.lines.map(l => <div key={l.id}><strong>{l.productName}</strong><span> {l.quantity} x {formatMoney(l.unitPrice)} = {formatMoney(l.lineTotal)}</span><small> Discount {formatMoney(l.discountAmount)} | Taxable {formatMoney(l.taxableAmount)} | CGST {formatMoney(l.cgstAmount)} | SGST {formatMoney(l.sgstAmount)} | IGST {formatMoney(l.igstAmount)}</small></div>)}

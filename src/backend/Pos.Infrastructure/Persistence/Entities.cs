@@ -231,6 +231,73 @@ public sealed class InvoiceSequence
     public uint xmin { get; set; }
 }
 
+public sealed class SaleCorrection : TenantEntity
+{
+    public Guid SaleId { get; set; }
+    public Guid TerminalId { get; set; }
+    public Guid ClientGeneratedId { get; set; }
+    public string RequestHash { get; set; } = "";
+    public string Number { get; set; } = "";
+    public string Kind { get; set; } = "";
+    public string Reason { get; set; } = "";
+    public decimal Total { get; set; }
+    public Guid ActorUserId { get; set; }
+    public DateTimeOffset OccurredAtUtc { get; set; }
+}
+
+public sealed class SaleCorrectionLine : TenantEntity
+{
+    public Guid CorrectionId { get; set; }
+    public Guid SaleLineId { get; set; }
+    public Guid? WarehouseId { get; set; }
+    public decimal Quantity { get; set; }
+    public bool Restock { get; set; }
+    public decimal DiscountAmount { get; set; }
+    public decimal TaxableAmount { get; set; }
+    public decimal CgstAmount { get; set; }
+    public decimal SgstAmount { get; set; }
+    public decimal IgstAmount { get; set; }
+    public decimal Total { get; set; }
+}
+
+public sealed class SaleRefund : TenantEntity
+{
+    public Guid CorrectionId { get; set; }
+    public PaymentMethod Method { get; set; }
+    public decimal Amount { get; set; }
+    public string? Reference { get; set; }
+}
+
+public sealed class CashDrawerSession : TenantEntity
+{
+    public Guid TerminalId { get; set; }
+    public Guid OpenCommandId { get; set; }
+    public string OpenRequestHash { get; set; } = "";
+    public decimal OpeningFloat { get; set; }
+    public Guid OpenedByUserId { get; set; }
+    public DateTimeOffset OpenedAtUtc { get; set; }
+    public Guid? CloseCommandId { get; set; }
+    public string? CloseRequestHash { get; set; }
+    public Guid? ClosedByUserId { get; set; }
+    public DateTimeOffset? ClosedAtUtc { get; set; }
+    public decimal? ExpectedAtClose { get; set; }
+    public decimal? CountedAtClose { get; set; }
+    public decimal? Variance { get; set; }
+    public string? CloseNote { get; set; }
+}
+
+public sealed class CashDrawerMovement : TenantEntity
+{
+    public Guid SessionId { get; set; }
+    public string Kind { get; set; } = "";
+    public Guid SourceId { get; set; }
+    public string? RequestHash { get; set; }
+    public decimal AmountDelta { get; set; }
+    public string Reason { get; set; } = "";
+    public Guid ActorUserId { get; set; }
+    public DateTimeOffset OccurredAtUtc { get; set; }
+}
+
 public sealed class TerminalDevice : TenantEntity
 {
     public Guid TerminalId { get; set; }

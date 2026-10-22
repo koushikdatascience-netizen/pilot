@@ -4,6 +4,7 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Pos.Application.Common;
+using Pos.Application.Retail;
 using Pos.Domain.Common;
 using Pos.Domain.Identity;
 using Pos.Domain.Sales;
@@ -22,14 +23,16 @@ public sealed class CompleteSaleService
     private readonly ITenantContext _tenant;
     private readonly SaleCalculator _calculator;
     private readonly ILogger<CompleteSaleService> _logger;
+    private readonly CashDrawerService _drawer;
     private const int MaxRetries = 5;
 
-    public CompleteSaleService(CommerceDbContext db, ITenantContext tenant, SaleCalculator calculator, ILogger<CompleteSaleService> logger)
+    public CompleteSaleService(CommerceDbContext db, ITenantContext tenant, SaleCalculator calculator, ILogger<CompleteSaleService> logger, CashDrawerService drawer)
     {
         _db = db;
         _tenant = tenant;
         _calculator = calculator;
         _logger = logger;
+        _drawer = drawer;
     }
 
     public async Task<SaleResponse> CompleteAsync(CompleteSaleRequest request, CancellationToken cancellationToken)
@@ -185,6 +188,7 @@ public sealed class CompleteSaleService
         };
         }).ToArray();
         _db.Payments.AddRange(payments);
+        await _drawer.CaptureAsync(terminal.Id, sale.Id, payments.Where(p => p.Method == PaymentMethod.Cash).Sum(p => p.AmountDue), false, cancellationToken);
 
         foreach (var line in saleLines.Where(l => products[l.ProductId].IsStockTracked))
         {
@@ -420,6 +424,7 @@ public sealed class CompleteSaleService
             };
         }).ToArray();
         _db.Payments.AddRange(payments);
+        await _drawer.CaptureAsync(terminal.Id, sale.Id, payments.Where(p => p.Method == PaymentMethod.Cash).Sum(p => p.AmountDue), false, cancellationToken);
 
         foreach (var line in lines.Where(l => products[l.ProductId].IsStockTracked))
         {

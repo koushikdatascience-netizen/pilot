@@ -6,6 +6,7 @@ import { BootstrapResponse, ProductResponse, SaleResponse, TaxCategoryResponse, 
 import { calculateCartTotals, formatMoney } from "../../lib/pos-calculations.mjs";
 import { Cart, CartLine, PaymentPanel, ReceiptView } from "../../components/checkout";
 import { CustomerSelector } from "../../components/customer-selector";
+import { RetailCorrections } from "../../components/retail-corrections";
 
 type Client = ReturnType<typeof createClient>;
 
@@ -18,6 +19,8 @@ export default function PosPage() {
   const [customerId, setCustomerId] = useState("");
   const [cart, setCart] = useState<CartLine[]>([]);
   const [held, setHeld] = useState<SaleResponse[]>([]);
+  const [voiding, setVoiding] = useState<SaleResponse | null>(null);
+  const [canVoid, setCanVoid] = useState(false);
   const [activeHeld, setActiveHeld] = useState<SaleResponse | null>(null);
   const [receipt, setReceipt] = useState<SaleResponse | null>(null);
   const [query, setQuery] = useState("");
@@ -41,7 +44,7 @@ export default function PosPage() {
       if (cancelled) return;
       const savedId = localStorage.getItem("pilot-terminal:" + auth.tenantId);
       const selected = available.find(t => t.terminalId === savedId) ?? available[0];
-      setClient(api); setContext(selected ? { ...boot, ...selected } : null); setTerminals(available); setProducts(items); setTaxes(taxList); setHeld(holds);
+      setClient(api); setCanVoid(auth.permissions.includes("VoidSales")); setContext(selected ? { ...boot, ...selected } : null); setTerminals(available); setProducts(items); setTaxes(taxList); setHeld(holds);
       setCustomerId(people.find(c => c.isWalkIn)?.id ?? "");
     }).catch(e => setError(e.message));
     return () => { cancelled = true; };
@@ -118,7 +121,7 @@ export default function PosPage() {
 
   return <main className="pos">
     <section className="pos-left">
-      <header className="pos-header"><div><p className="eyebrow">Pilot POS</p><h1>Retail Checkout</h1><span className="sync-status">{context ? context.tenantName : "Connecting..."}</span></div><a className="secondary-link" href="/">Back office</a></header>
+      <header className="pos-header"><div><p className="eyebrow">Pilot POS</p><h1>Retail Checkout</h1><span className="sync-status">{context ? context.tenantName : "Connecting..."}</span></div><div className="toolbar"><a className="secondary-link" href="/cash-drawer">Cash drawer</a><a className="secondary-link" href="/">Back office</a></div></header>
       <label>Terminal<select className="customer-select" aria-label="Terminal" value={context?.terminalId ?? ""} disabled={busy || cart.length > 0} onChange={e => {
         const terminal = terminals.find(t => t.terminalId === e.target.value);
         if (terminal && context) { setContext({ ...context, ...terminal }); localStorage.setItem("pilot-terminal:" + terminal.tenantId, terminal.terminalId); }
@@ -127,7 +130,8 @@ export default function PosPage() {
       <form className="scan-box" onSubmit={scan}><Search size={20}/><input ref={scanner} autoFocus value={query} onChange={e => setQuery(e.target.value)} aria-label="Scan barcode or search product" placeholder="Scan barcode or search product" disabled={busy}/></form>
       <div className="quick-grid">{products.map(p => <button className="product-tile" key={p.id} disabled={busy || recovering} onClick={() => add(p)}><span>{p.name}</span><small>{p.sku}</small><strong>{formatMoney(p.price)}</strong></button>)}</div>
       {products.length === 0 && <p className="empty-state">No matching products</p>}
-      <section className="held-sales"><h2>Held Sales</h2>{held.length === 0 ? <span className="muted">No held carts</span> : held.map(s => <div className="mini-sale" key={s.id}><span>{s.invoiceNumber}</span><strong>{formatMoney(s.grandTotal)}</strong><button disabled={busy} onClick={() => resume(s)}>Resume</button></div>)}</section>
+      <section className="held-sales"><h2>Held Sales</h2>{held.length === 0 ? <span className="muted">No held carts</span> : held.map(s => <div className="mini-sale" key={s.id}><span>{s.invoiceNumber}</span><strong>{formatMoney(s.grandTotal)}</strong><button disabled={busy || recovering} onClick={() => resume(s)}>Resume</button>{canVoid && <button disabled={busy || recovering} onClick={() => setVoiding(s)}>Void</button>}</div>)}</section>
+      {voiding && client && <section><button className="secondary-link" onClick={() => setVoiding(null)}>Close reversal</button><RetailCorrections key={voiding.id} client={client} sale={voiding} onRecorded={() => { setHeld(list => list.filter(s => s.id !== voiding.id)); if (activeHeld?.id === voiding.id) clear(); }}/></section>}
     </section>
     <aside className="cart-panel">
       <h2>{activeHeld ? "Resumed Sale" : "Current Cart"}</h2>

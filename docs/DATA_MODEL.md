@@ -181,3 +181,14 @@ OutboxEvent:
 - Audit index `(TenantId, OccurredAtUtc, Id)` supports tenant-scoped ordered review. Identity audits retain before/after names, role IDs/permission names and status, but exclude password/hash/token material. PasswordReset records only session revocation metadata.
 - Existing user/role Version values protect stale editor submissions. Identity transactions additionally serialize tenant administrators and enforce an active ManageUsers holder after changes. No hard-delete or audit-edit API is introduced.
 - Migration: `20261021100216_OperationalHardening`. Financial records and edge data formats remain unchanged.
+
+## Milestone 5 Additions
+
+- SaleCorrection: tenant-owned original SaleId, processing TerminalId, permanent ClientGeneratedId, RequestHash, unique Number, Kind (Return/Void/OpenVoid), Reason, Total, ActorUserId and OccurredAtUtc. Unique tenant/terminal/command and tenant/number indexes. Financial voids/returns do not mutate completed originals.
+- SaleCorrectionLine: CorrectionId, original SaleLineId, optional original WarehouseId, Quantity (18,3), Restock, allocated DiscountAmount, TaxableAmount, CgstAmount, SgstAmount, IgstAmount and Total (18,2). Unique correction/original-line pair; composite tenant foreign keys prevent cross-tenant links. No current catalog values are substituted.
+- SaleRefund: CorrectionId, Method, Amount and optional operator Reference; unique correction/method allocation. Captured payment AmountDue minus earlier refunds is the tender ceiling. It records a manual action, not a provider settlement.
+- CashDrawerSession: TerminalId, OpenCommandId/OpenRequestHash, OpeningFloat, OpenedByUserId/OpenedAtUtc, optional CloseCommandId/CloseRequestHash, ClosedByUserId/ClosedAtUtc, ExpectedAtClose, CountedAtClose, Variance and CloseNote. Unique terminal/open-command; partial unique tenant/terminal index where ClosedAtUtc is null.
+- CashDrawerMovement: SessionId, Kind (Sale/Refund/PaidIn/PaidOut), SourceId, optional manual-command RequestHash, signed AmountDelta, Reason, ActorUserId and OccurredAtUtc. Unique tenant/session/source prevents duplicate movements. Cash sale allocation excludes change. Closed sessions and committed movements have no edit/delete API.
+- All five entities carry standard tenant timestamps/version. Composite tenant foreign keys cover original sale, terminal, correction, line, warehouse and drawer-session references. Actor IDs remain historical identifiers.
+- Permission enum appends ProcessReturns, VoidSales and ManageCashDrawer without renumbering existing entries. Migration grants them once from existing ManageSettings permissions. Startup does not restore later revocations.
+- Migration: `20261022052659_RetailCorrectionsAndDrawers`. Original invoices, captures, stock entries and edge queue formats are unchanged. Financial corrections require online authoritative transactions.

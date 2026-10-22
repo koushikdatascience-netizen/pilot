@@ -36,6 +36,12 @@ export type PagedResponse<T> = { items: T[]; page: number; pageSize: number; tot
 export type AdminRole = { id: string; name: string; version: number; permissions: string[] };
 export type AdminUser = { id: string; displayName: string; email: string; isActive: boolean; version: number; roleIds: string[] };
 export type AuditEntry = { id: string; actorUserId: string | null; actorName: string | null; action: string; entityName: string; entityId: string; terminalId: string | null; occurredAtUtc: string; beforeJson: string | null; afterJson: string | null };
+export type RefundAllocation = { method: string; amount: number; reference: string | null };
+export type CorrectionLine = { saleLineId: string; quantity: number; restock: boolean; warehouseId: string | null; discountAmount: number; taxableAmount: number; cgstAmount: number; sgstAmount: number; igstAmount: number; total: number };
+export type CorrectionQuote = { kind: string; total: number; lines: CorrectionLine[]; tenderAvailable: RefundAllocation[] };
+export type Correction = { id: string; saleId: string; terminalId: string; clientGeneratedId: string; number: string; kind: string; reason: string; total: number; occurredAtUtc: string; lines: CorrectionLine[]; refunds: RefundAllocation[]; idempotentReplay: boolean };
+export type CorrectionHistory = { effectiveStatus: string; corrections: Correction[] };
+export type DrawerSession = { id: string; terminalId: string; openedAtUtc: string; closedAtUtc: string | null; openingFloat: number; expectedCash: number; countedCash: number | null; variance: number | null; closeNote: string | null; movements: { id: string; kind: string; sourceId: string; amountDelta: number; reason: string; actorUserId: string; occurredAtUtc: string }[] };
 export type TerminalContextResponse = { tenantId: string; organizationId: string; businessId: string; locationId: string; locationName: string; terminalId: string; terminalName: string; warehouseId: string };
 export type CategoryResponse = { id: string; name: string; parentCategoryId: string | null };
 export type TaxCategoryResponse = { id: string; name: string; countryCode: string; rate: number; taxBehavior: "Inclusive" | "Exclusive" };
@@ -45,7 +51,7 @@ export type PaymentResponse = { id: string; method: string; amount: number; amou
 export type ReceiptHeader = { businessName: string; legalName: string; locationName: string; address: string | null; gstin: string | null; terminalName: string; cashierName: string; customerName: string };
 export type SaleLineResponse = { id: string; productId: string; productName: string; sku: string; barcode: string | null; quantity: number; unitPrice: number; discountAmount: number; taxableAmount: number; taxRate: number; taxAmount: number; cgstAmount: number; sgstAmount: number; igstAmount: number; lineTotal: number; hsnSac: string | null };
 export type SaleResponse = { id: string; locationId: string; terminalId: string; customerId: string | null; invoiceNumber: string; status: string; currency: string; subtotal: number; discountTotal: number; taxTotal: number; grandTotal: number; clientGeneratedId: string; completedAtUtc: string | null; syncStatus: string; lines: SaleLineResponse[]; payments: PaymentResponse[]; idempotentReplay: boolean; receipt: ReceiptHeader | null };
-export type TodayReportResponse = { revenue: number; transactionCount: number; averageOrderValue: number; itemsSold: number; paymentMix: { method: string; amount: number; count: number }[]; topSellingProducts: { productId: string; productName: string; quantity: number; revenue: number }[]; lowStockProducts: { productId: string; productName: string; quantityOnHand: number }[] };
+export type TodayReportResponse = { revenue: number; grossRevenue: number; refundTotal: number; refundMix: { method: string; amount: number; count: number }[]; transactionCount: number; averageOrderValue: number; itemsSold: number; paymentMix: { method: string; amount: number; count: number }[]; topSellingProducts: { productId: string; productName: string; quantity: number; revenue: number }[]; lowStockProducts: { productId: string; productName: string; quantityOnHand: number }[] };
 
 const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
 export async function login(email?: string, password?: string): Promise<LoginResponse> {
@@ -99,6 +105,13 @@ export async function request<T>(path: string, init: RequestInit = {}, token?: s
 
 export function createClient(token: string) {
   return {
+    corrections: (saleId: string) => request<CorrectionHistory>(`/api/v1/sales/${saleId}/corrections`, {}, token),
+    correctionQuote: (saleId: string, operation: string, body: unknown) => request<CorrectionQuote>(`/api/v1/sales/${saleId}/${operation}/quote`, { method: "POST", body: JSON.stringify(body) }, token),
+    recordCorrection: (saleId: string, operation: string, body: unknown) => request<Correction>(`/api/v1/sales/${saleId}/${operation}`, { method: "POST", body: JSON.stringify(body) }, token),
+    drawers: (terminalId: string) => request<DrawerSession[]>(`/api/v1/cash-drawers/terminals/${terminalId}`, {}, token),
+    openDrawer: (terminalId: string, body: unknown) => request<DrawerSession>(`/api/v1/cash-drawers/terminals/${terminalId}/open`, { method: "POST", body: JSON.stringify(body) }, token),
+    closeDrawer: (id: string, body: unknown) => request<DrawerSession>(`/api/v1/cash-drawers/${id}/close`, { method: "POST", body: JSON.stringify(body) }, token),
+    drawerMovement: (id: string, body: unknown) => request<DrawerSession>(`/api/v1/cash-drawers/${id}/movements`, { method: "POST", body: JSON.stringify(body) }, token),
     me: () => request<Omit<LoginResponse, "accessToken">>("/api/v1/auth/me", {}, token),
     adminPermissions: () => request<string[]>("/api/v1/administration/permissions", {}, token),
     adminRoles: () => request<AdminRole[]>("/api/v1/administration/roles", {}, token),

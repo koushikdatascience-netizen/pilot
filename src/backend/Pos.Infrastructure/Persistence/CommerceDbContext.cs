@@ -30,6 +30,11 @@ public sealed class CommerceDbContext : DbContext
     public DbSet<InvoiceSequence> InvoiceSequences => Set<InvoiceSequence>();
     public DbSet<TerminalDevice> TerminalDevices => Set<TerminalDevice>();
     public DbSet<SyncChange> SyncChanges => Set<SyncChange>();
+    public DbSet<SaleCorrection> SaleCorrections => Set<SaleCorrection>();
+    public DbSet<SaleCorrectionLine> SaleCorrectionLines => Set<SaleCorrectionLine>();
+    public DbSet<SaleRefund> SaleRefunds => Set<SaleRefund>();
+    public DbSet<CashDrawerSession> CashDrawerSessions => Set<CashDrawerSession>();
+    public DbSet<CashDrawerMovement> CashDrawerMovements => Set<CashDrawerMovement>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -54,6 +59,62 @@ public sealed class CommerceDbContext : DbContext
         ConfigureTenantEntity<OutboxEvent>(modelBuilder, "outbox_events");
         ConfigureTenantEntity<TerminalDevice>(modelBuilder, "terminal_devices");
         ConfigureTenantEntity<SyncChange>(modelBuilder, "sync_changes");
+        ConfigureTenantEntity<SaleCorrection>(modelBuilder, "sale_corrections");
+        ConfigureTenantEntity<SaleCorrectionLine>(modelBuilder, "sale_correction_lines");
+        ConfigureTenantEntity<SaleRefund>(modelBuilder, "sale_refunds");
+        ConfigureTenantEntity<CashDrawerSession>(modelBuilder, "cash_drawer_sessions");
+        ConfigureTenantEntity<CashDrawerMovement>(modelBuilder, "cash_drawer_movements");
+
+        modelBuilder.Entity<SaleCorrection>(entity =>
+        {
+            entity.Property(x => x.RequestHash).HasMaxLength(64);
+            entity.Property(x => x.Number).HasMaxLength(40);
+            entity.Property(x => x.Kind).HasMaxLength(16);
+            entity.Property(x => x.Reason).HasMaxLength(300);
+            entity.Property(x => x.Total).HasPrecision(18, 2);
+            entity.HasIndex(x => new { x.TenantId, x.TerminalId, x.ClientGeneratedId }).IsUnique();
+            entity.HasIndex(x => new { x.TenantId, x.Number }).IsUnique();
+            entity.HasIndex(x => new { x.TenantId, x.SaleId });
+            entity.HasIndex(x => new { x.TenantId, x.OccurredAtUtc });
+            entity.HasOne<Sale>().WithMany().HasForeignKey(x => new { x.TenantId, x.SaleId }).HasPrincipalKey(x => new { x.TenantId, x.Id }).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Terminal>().WithMany().HasForeignKey(x => new { x.TenantId, x.TerminalId }).HasPrincipalKey(x => new { x.TenantId, x.Id }).OnDelete(DeleteBehavior.Restrict);
+        });
+        modelBuilder.Entity<SaleCorrectionLine>(entity =>
+        {
+            entity.Property(x => x.Quantity).HasPrecision(18, 3);
+            foreach (var name in new[] { "DiscountAmount", "TaxableAmount", "CgstAmount", "SgstAmount", "IgstAmount", "Total" }) entity.Property<decimal>(name).HasPrecision(18, 2);
+            entity.HasIndex(x => new { x.TenantId, x.CorrectionId, x.SaleLineId }).IsUnique();
+            entity.HasOne<SaleCorrection>().WithMany().HasForeignKey(x => new { x.TenantId, x.CorrectionId }).HasPrincipalKey(x => new { x.TenantId, x.Id }).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<SaleLine>().WithMany().HasForeignKey(x => new { x.TenantId, x.SaleLineId }).HasPrincipalKey(x => new { x.TenantId, x.Id }).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Warehouse>().WithMany().HasForeignKey(x => new { x.TenantId, x.WarehouseId }).HasPrincipalKey(x => new { x.TenantId, x.Id }).OnDelete(DeleteBehavior.Restrict);
+        });
+        modelBuilder.Entity<SaleRefund>(entity =>
+        {
+            entity.Property(x => x.Method).HasConversion<string>().HasMaxLength(32);
+            entity.Property(x => x.Amount).HasPrecision(18, 2);
+            entity.Property(x => x.Reference).HasMaxLength(160);
+            entity.HasIndex(x => new { x.TenantId, x.CorrectionId, x.Method }).IsUnique();
+            entity.HasOne<SaleCorrection>().WithMany().HasForeignKey(x => new { x.TenantId, x.CorrectionId }).HasPrincipalKey(x => new { x.TenantId, x.Id }).OnDelete(DeleteBehavior.Restrict);
+        });
+        modelBuilder.Entity<CashDrawerSession>(entity =>
+        {
+            foreach (var name in new[] { "OpeningFloat", "ExpectedAtClose", "CountedAtClose", "Variance" }) entity.Property(name).HasPrecision(18, 2);
+            entity.Property(x => x.OpenRequestHash).HasMaxLength(64);
+            entity.Property(x => x.CloseRequestHash).HasMaxLength(64);
+            entity.Property(x => x.CloseNote).HasMaxLength(300);
+            entity.HasIndex(x => new { x.TenantId, x.TerminalId }).IsUnique().HasFilter("\"ClosedAtUtc\" IS NULL");
+            entity.HasIndex(x => new { x.TenantId, x.TerminalId, x.OpenCommandId }).IsUnique();
+            entity.HasOne<Terminal>().WithMany().HasForeignKey(x => new { x.TenantId, x.TerminalId }).HasPrincipalKey(x => new { x.TenantId, x.Id }).OnDelete(DeleteBehavior.Restrict);
+        });
+        modelBuilder.Entity<CashDrawerMovement>(entity =>
+        {
+            entity.Property(x => x.Kind).HasMaxLength(16);
+            entity.Property(x => x.Reason).HasMaxLength(300);
+            entity.Property(x => x.RequestHash).HasMaxLength(64);
+            entity.Property(x => x.AmountDelta).HasPrecision(18, 2);
+            entity.HasIndex(x => new { x.TenantId, x.SessionId, x.SourceId }).IsUnique();
+            entity.HasOne<CashDrawerSession>().WithMany().HasForeignKey(x => new { x.TenantId, x.SessionId }).HasPrincipalKey(x => new { x.TenantId, x.Id }).OnDelete(DeleteBehavior.Restrict);
+        });
 
         modelBuilder.Entity<TerminalDevice>(entity =>
         {

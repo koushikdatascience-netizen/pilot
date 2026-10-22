@@ -14,6 +14,7 @@ using Pos.Application.Common;
 using Pos.Application.Customers;
 using Pos.Application.Inventory;
 using Pos.Application.Reporting;
+using Pos.Application.Retail;
 using Pos.Application.Sales;
 using Pos.Application.Tenancy;
 using Pos.Application.Sync;
@@ -65,6 +66,8 @@ builder.Services.AddScoped<CustomerService>();
 builder.Services.AddScoped<InventoryService>();
 builder.Services.AddScoped<CompleteSaleService>();
 builder.Services.AddScoped<ReportingService>();
+builder.Services.AddScoped<CashDrawerService>();
+builder.Services.AddScoped<SaleCorrectionService>();
 builder.Services.AddScoped<TenancyService>();
 builder.Services.AddScoped<SyncService>();
 builder.Services.AddScoped<OutboxPublisher>();
@@ -79,6 +82,8 @@ builder.Services.AddAuthentication(SignedBearerAuthenticationHandler.SchemeName)
     .AddScheme<SignedBearerAuthenticationOptions, SignedBearerAuthenticationHandler>(SignedBearerAuthenticationHandler.SchemeName, _ => { });
 builder.Services.AddAuthorization(options =>
 {
+    options.AddPolicy("ReadRetailCorrections", policy => policy.RequireAuthenticatedUser().RequireAssertion(context =>
+        context.User.HasClaim("permission", nameof(Permission.CompleteSale)) || context.User.HasClaim("permission", nameof(Permission.ProcessReturns)) || context.User.HasClaim("permission", nameof(Permission.VoidSales))));
     foreach (var permission in Enum.GetValues<Permission>())
     {
         options.AddPolicy(permission.ToString(), policy =>
@@ -246,6 +251,17 @@ protectedApi.MapGet("/sales/history", async (CompleteSaleService service, string
 
 protectedApi.MapGet("/reports/today", [Authorize(Policy = nameof(Permission.ViewReports))] async (ReportingService service, CancellationToken cancellationToken) =>
     Results.Ok(await service.TodayAsync(cancellationToken)));
+
+protectedApi.MapGet("/sales/{id:guid}/corrections", [Authorize(Policy = "ReadRetailCorrections")] async (SaleCorrectionService service, Guid id, CancellationToken ct) => Results.Ok(await service.HistoryAsync(id, ct)));
+protectedApi.MapPost("/sales/{id:guid}/returns/quote", [Authorize(Policy = nameof(Permission.ProcessReturns))] async (SaleCorrectionService service, Guid id, CorrectionRequest request, CancellationToken ct) => Results.Ok(await service.QuoteAsync(id, request, false, ct)));
+protectedApi.MapPost("/sales/{id:guid}/returns", [Authorize(Policy = nameof(Permission.ProcessReturns))] async (SaleCorrectionService service, Guid id, CorrectionRequest request, CancellationToken ct) => Results.Ok(await service.CreateAsync(id, request, false, ct)));
+protectedApi.MapPost("/sales/{id:guid}/void/quote", [Authorize(Policy = nameof(Permission.VoidSales))] async (SaleCorrectionService service, Guid id, CorrectionRequest request, CancellationToken ct) => Results.Ok(await service.QuoteAsync(id, request, true, ct)));
+protectedApi.MapPost("/sales/{id:guid}/void", [Authorize(Policy = nameof(Permission.VoidSales))] async (SaleCorrectionService service, Guid id, CorrectionRequest request, CancellationToken ct) => Results.Ok(await service.CreateAsync(id, request, true, ct)));
+var cashDrawers = protectedApi.MapGroup("/cash-drawers").RequireAuthorization(nameof(Permission.ManageCashDrawer));
+cashDrawers.MapGet("/terminals/{terminalId:guid}", async (CashDrawerService service, Guid terminalId, CancellationToken ct) => Results.Ok(await service.ListAsync(terminalId, ct)));
+cashDrawers.MapPost("/terminals/{terminalId:guid}/open", async (CashDrawerService service, Guid terminalId, OpenDrawerRequest request, CancellationToken ct) => Results.Ok(await service.OpenAsync(terminalId, request, ct)));
+cashDrawers.MapPost("/{id:guid}/close", async (CashDrawerService service, Guid id, CloseDrawerRequest request, CancellationToken ct) => Results.Ok(await service.CloseAsync(id, request, ct)));
+cashDrawers.MapPost("/{id:guid}/movements", async (CashDrawerService service, Guid id, DrawerMovementRequest request, CancellationToken ct) => Results.Ok(await service.MoveAsync(id, request, ct)));
 
 app.Run();
 

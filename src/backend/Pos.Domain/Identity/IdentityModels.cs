@@ -11,7 +11,10 @@ public enum Permission
     ViewReports,
     ManageSettings,
     ManageUsers,
-    ViewAudit
+    ViewAudit,
+    ProcessReturns,
+    VoidSales,
+    ManageCashDrawer
 }
 
 public sealed record Role : TenantEntity

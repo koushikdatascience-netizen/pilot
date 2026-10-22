@@ -5,6 +5,7 @@ import { ChevronLeft, ChevronRight, ReceiptText } from "lucide-react";
 import { CustomerResponse, PagedResponse, SaleResponse, TerminalContextResponse, createClient } from "../lib/api";
 import { formatMoney } from "../lib/pos-calculations.mjs";
 import { ReceiptView } from "./checkout";
+import { RetailCorrections } from "./retail-corrections";
 
 export function SaleHistory({ client }: { client: ReturnType<typeof createClient> | null }) {
   const [result, setResult] = useState<PagedResponse<SaleResponse> | null>(null);
@@ -48,6 +49,6 @@ export function SaleHistory({ client }: { client: ReturnType<typeof createClient
     <div className="table-scroll"><table><thead><tr><th>Invoice</th><th>Date</th><th>Total</th><th>Receipt</th></tr></thead><tbody>{result?.items.map(s => <tr key={s.id}><td>{s.invoiceNumber}</td><td>{s.completedAtUtc && new Date(s.completedAtUtc).toLocaleString()}</td><td>{formatMoney(s.grandTotal)}</td><td><button className="icon-button" title="View receipt" aria-label={`View receipt ${s.invoiceNumber}`} onClick={() => setSelected(s)}><ReceiptText size={18}/></button></td></tr>)}</tbody></table></div>
     {result?.totalCount === 0 && <p>No sales found</p>}
     <div className="toolbar"><button className="icon-button" aria-label="Previous sales page" title="Previous page" disabled={page <= 1} onClick={() => setPage(page - 1)}><ChevronLeft size={18}/></button><span>Page {page} | {result?.totalCount ?? 0} sales</span><button className="icon-button" aria-label="Next sales page" title="Next page" disabled={!result || page * result.pageSize >= result.totalCount} onClick={() => setPage(page + 1)}><ChevronRight size={18}/></button></div>
-    {selected && <><button className="secondary-link" onClick={() => setSelected(null)}>Close receipt</button><ReceiptView sale={selected}/></>}
+    {selected && <><button className="secondary-link" onClick={() => setSelected(null)}>Close receipt</button><ReceiptView sale={selected}/>{client && <RetailCorrections key={selected.id} client={client} sale={selected}/>}</>}
   </section>;
 }

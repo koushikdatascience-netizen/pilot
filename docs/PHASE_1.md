@@ -42,3 +42,4 @@ Phase 1 does not include full restaurant KDS, hotel PMS, pharmacy prescription m
 2. Retail completion: receipt history, stock history drill-down, returns/voids, cash drawer flows, and richer sales history.
 3. Offline preparation: local edge data store, outbox processing, sync status, terminal registration, conflict rules.
 4. Operational hardening: expanded RBAC administration, audit review UI, Playwright E2E, deployment pipeline.
+5. Retail operations completion (user-selected follow-up): partial returns, open/completed-sale voids, manual refund records and cash drawer reconciliation; see MILESTONE_5.md.

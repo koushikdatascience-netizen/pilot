@@ -567,6 +567,19 @@ th {
 .admin-audit-dialog { width: min(680px, calc(100% - 32px)); }
 .admin-audit-dialog pre { max-width: 100%; padding: 12px; background: var(--surface-2); }
 .admin-audit-dialog dd { overflow-wrap: anywhere; }
+.retail-corrections { border-top: 1px solid var(--line); padding-top: 20px; min-width: 0; }
+.retail-operation-form fieldset, .retail-corrections > section > fieldset { border: 0; padding: 0; margin: 12px 0; min-width: 0; }
+.retail-corrections td input[type=number] { width: 110px; min-height: 38px; border: 1px solid var(--line); padding: 6px; border-radius: 4px; }
+.retail-corrections input[type=checkbox] { width: 18px; height: 18px; }
+.retail-corrections .stock-form input, .retail-corrections .stock-form select { max-width: 100%; }
+.refund-row { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 12px; }
+.refund-row label { display: grid; gap: 5px; font-size: 13px; }
+.refund-row input { min-height: 38px; width: 180px; max-width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px; }
+.drawer-forms { border-top: 1px solid var(--line); margin: 20px 0; }
+.correction-receipt { margin: 20px 0; overflow-wrap: anywhere; }
+.cash-workspace .metric strong { font-size: 20px; overflow-wrap: anywhere; }
+.retail-corrections .stock-form label, .cash-workspace .stock-form label { min-width: 0; max-width: 100%; }
+.cash-workspace .stock-form select { max-width: 100%; }
 .admin-pagination { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; align-items: center; padding-top: 16px; font-size: 13px; }
 .admin-dialog { width: min(520px, calc(100% - 32px)); max-height: 90vh; overflow: auto; padding: 22px; border: 1px solid var(--line); border-radius: 8px; color: var(--text); }
 .admin-dialog::backdrop { background: #0008; }
@@ -582,6 +595,8 @@ th {
 @media print {
   body * { visibility: hidden; }
   .receipt, .receipt * { visibility: visible; }
+  body:not([data-print-target=correction]) .correction-receipt, body:not([data-print-target=correction]) .correction-receipt * { visibility: hidden; }
+  body[data-print-target=correction] .receipt:not(.correction-receipt), body[data-print-target=correction] .receipt:not(.correction-receipt) * { visibility: hidden; }
   .receipt { position: absolute; left: 0; top: 0; width: 80mm; border: 0; box-shadow: none; background: white; color: black; font-size: 11px; padding: 3mm; }
   .receipt button, .receipt select { display: none; }
   .receipt.paper-58 { width: 58mm; }
