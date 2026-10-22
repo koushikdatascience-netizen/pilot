@@ -62,4 +62,11 @@ Custom HMAC authentication remains; no IdP, MFA, invitation flow, self-service r
 
 ## Results
 
-Pending final local results and remote CI verification.
+- Solution build succeeded with zero warnings/errors; final solution test run passed all 55 tests: 15 domain, 2 fast integration, 25 PostgreSQL and 13 SQLite edge tests.
+- Both focused stock-concurrency tests passed before the final full run, including the deterministically paused stale-snapshot case.
+- Five frontend calculation tests passed. Production Next build/TypeScript checks passed. All three standalone Chromium E2E flows passed after the final stock fix.
+- Desktop/mobile screenshots were visually inspected; the audit dialog and tables have no page-width overflow at tested viewports. EF reported no pending model changes. Final API Release publish passed.
+- Local API readiness and `/administration` HTTP smoke checks passed. Preview: `http://localhost:3000/administration` (sign-in required).
+- Implementation commit `9f534d6` was pushed to master. [GitHub Actions run 39726672659](https://github.com/koushikdatascience-netizen/pilot/actions/runs/39726672659) passed all steps in 2m42s: restore/build/tests on PostgreSQL 16, frontend tests/build, all three browser flows, Linux candidate packaging, migration bundle applied twice, published Production API readiness and zero seeded tenants.
+- CI uploaded `pilot-linux-x64` (74,492,450 bytes) and `test-evidence` (892,273 bytes). Both artifacts were confirmed available through the Actions API. The candidate contains the archive/checksum pair described in the runbook.
+- GitHub recognizes both workflows as active. The approval workflow was not dispatched; release reviewers, environment protection and production credentials remain unconfigured by this task. No live deployment or production database changes occurred. Actions emitted non-blocking Node-runtime/runner-image notices; all required checks passed.
